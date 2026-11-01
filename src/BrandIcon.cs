@@ -11,7 +11,7 @@ namespace Neon
         private static Stream Open()
         {
             var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Neon.Icon");
-            if (stream == null) throw new InvalidOperationException("Icona NEON mancante.");
+            if (stream == null) throw new InvalidOperationException("NEON icon is missing.");
             return stream;
         }
         public static Icon Tray()

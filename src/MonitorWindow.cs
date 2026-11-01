@@ -170,7 +170,7 @@ namespace Neon
             var header = new Grid { Margin = new Thickness(0, 0, 0, 5) };
             header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var brand = Text("●  NEON / SYS", 10, Green, true); brand.VerticalAlignment = VerticalAlignment.Center;
-            brand.ToolTip = "Trascina da qui per spostare il widget. Tasto destro per le opzioni.";
+            brand.ToolTip = "Drag here to move the widget. Right-click for settings.";
             header.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) {
                 if (e.OriginalSource is TextBlock || e.OriginalSource == header)
                     try {
@@ -183,24 +183,24 @@ namespace Neon
             };
             header.Children.Add(brand);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            compactButton = ActionButton("=", "Modalità compatta", ToggleCompact);
+            compactButton = ActionButton("=", "Compact mode", ToggleCompact);
             actions.Children.Add(compactButton);
-            actions.Children.Add(ActionButton("···", "Impostazioni e trasparenza", OpenOptions));
-            actions.Children.Add(ActionButton("−", "Nascondi nell'area di notifica", delegate { Hide(); }));
-            actions.Children.Add(ActionButton("×", "Chiudi NEON", delegate { Close(); }));
+            actions.Children.Add(ActionButton("···", "Settings and transparency", OpenOptions));
+            actions.Children.Add(ActionButton("−", "Hide to notification area", delegate { Hide(); }));
+            actions.Children.Add(ActionButton("×", "Close NEON", delegate { Close(); }));
             Place(header, actions, 0, 1); headerBody.Children.Add(header);
             var titleRow = new Grid(); titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             titleRow.Children.Add(Text("PC MONITOR", 20, White, true));
             time = Text("--:--:--", 10, Muted, true); time.VerticalAlignment = VerticalAlignment.Center; Place(titleRow, time, 0, 1); headerBody.Children.Add(titleRow);
             themeLabel = Text("MATRIX  /  LIVE 1s", 9, Green, true); themeLabel.Margin = new Thickness(1, 2, 0, 6); headerBody.Children.Add(themeLabel);
-            status = Text("●  COLLEGAMENTO AL SISTEMA…", 10, Green, true);
+            status = Text("●  CONNECTING TO SYSTEM…", 10, Green, true);
             var statusBox = new Border { Padding = new Thickness(7, 4, 7, 4), BorderBrush = Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = status }; headerBody.Children.Add(statusBox);
             cpuModel = Text("", 10, Muted, false); cpuModel.Visibility = Visibility.Collapsed; headerBody.Children.Add(cpuModel);
             var cards = new Grid();
             cards.ColumnDefinitions.Add(new ColumnDefinition()); cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.RowDefinitions.Add(new RowDefinition()); cards.RowDefinitions.Add(new RowDefinition());
             cpu = CreateMetric("01 / CPU", Green); ram = CreateMetric("02 / RAM", Cyan);
-            gpu = CreateMetric("03 / GPU", Green); temperature = CreateMetric("04 / TEMP CPU", Amber);
+            gpu = CreateMetric("03 / GPU", Green); temperature = CreateMetric("04 / CPU TEMP", Amber);
             cpu.Container.Margin = new Thickness(0, 0, 3, 6); ram.Container.Margin = new Thickness(3, 0, 0, 6);
             gpu.Container.Margin = new Thickness(0, 0, 3, 0); temperature.Container.Margin = new Thickness(3, 0, 0, 0);
             Place(cards, cpu.Container, 0, 0); Place(cards, ram.Container, 0, 1); Place(cards, gpu.Container, 1, 0); Place(cards, temperature.Container, 1, 1); body.Children.Add(cards);
@@ -208,7 +208,7 @@ namespace Neon
             var networkPanel = CreatePanel(new Thickness(0)); networkPanel.Margin = new Thickness(0, 0, 0, 8);
             var networkBody = new StackPanel(); networkPanel.Child = networkBody; details.Children.Add(networkPanel);
             gpuModel = Text("", 10, Muted, false); gpuModel.Visibility = Visibility.Collapsed; networkBody.Children.Add(gpuModel);
-            networkBody.Children.Add(SectionTitle("RETE", "↓ / ↑"));
+            networkBody.Children.Add(SectionTitle("NETWORK", "↓ / ↑"));
             var networkGrid = new Grid { Margin = new Thickness(0, 4, 0, 0) }; networkGrid.ColumnDefinitions.Add(new ColumnDefinition()); networkGrid.ColumnDefinitions.Add(new ColumnDefinition());
             var down = new StackPanel { Margin = new Thickness(0, 0, 10, 0) }; var up = new StackPanel { Margin = new Thickness(10, 0, 0, 0) };
             down.Children.Add(Text("↓ DOWNLOAD", 9, Muted, true)); download = Text("—", 15, Green, true); down.Children.Add(download);
@@ -218,13 +218,13 @@ namespace Neon
             networkGrid.Children.Add(down); Place(networkGrid, up, 0, 1); networkBody.Children.Add(networkGrid);
             var storagePanel = CreatePanel(new Thickness(0));
             var storageBody = new StackPanel(); storagePanel.Child = storageBody; details.Children.Add(storagePanel);
-            storageBody.Children.Add(SectionTitle("UNITÀ LOCALI", "STORAGE"));
+            storageBody.Children.Add(SectionTitle("LOCAL DRIVES", "STORAGE"));
             diskList = new StackPanel();
             storageBody.Children.Add(new ScrollViewer { Content = diskList, MaxHeight = 100, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
             memoryDetail = Text("COMMIT  —", 9, Muted, true); memoryDetail.Margin = new Thickness(0, 8, 0, 3); storageBody.Children.Add(memoryDetail);
             uptime = Text("UPTIME  —", 9, Muted, true); storageBody.Children.Add(uptime);
             body.Children.Add(new Border { Height = 1, Background = Line, Margin = new Thickness(0, 8, 0, 6) });
-            footer = Text("●  INIZIALIZZAZIONE", 8, Muted, true); body.Children.Add(footer);
+            footer = Text("●  INITIALIZING", 8, Muted, true); body.Children.Add(footer);
             shell.ContextMenu = CreateOptions();
         }
 
@@ -240,9 +240,9 @@ namespace Neon
             var stack = new StackPanel(); metric.Container.Child = stack;
             stack.Children.Add(Text(label, 9, Muted, true));
             metric.Value = Text("—", 24, accent, true); metric.Value.Margin = new Thickness(0, 1, 0, 0); stack.Children.Add(metric.Value);
-            metric.Detail = Text("In attesa…", 9, Muted, true); stack.Children.Add(metric.Detail);
+            metric.Detail = Text("Waiting…", 9, Muted, true); stack.Children.Add(metric.Detail);
             metric.Chart = new Sparkline { Height = 12, Margin = new Thickness(0, 4, 0, 0), Color = ((SolidColorBrush)accent).Color }; stack.Children.Add(metric.Chart);
-            metric.Container.ToolTip = "Grafico degli ultimi 60 campioni. Le interruzioni indicano dati non disponibili.";
+            metric.Container.ToolTip = "Last 60 samples. Gaps indicate unavailable readings.";
             return metric;
         }
         private Border CreatePanel(Thickness padding, bool outlined = false)
@@ -254,28 +254,28 @@ namespace Neon
         private ContextMenu CreateOptions()
         {
             var menu = CreateMenuChrome();
-            menu.Items.Add(new MenuItem { Header = "NEON / IMPOSTAZIONI", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
-            var templates = new MenuItem { Header = "Template colori", Tag = "themes", Icon = MenuGlyph("M1,1H6V6H1Z M10,1H15V6H10Z M1,10H6V15H1Z M10,10H15V15H10Z") };
+            menu.Items.Add(new MenuItem { Header = "NEON / SETTINGS", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
+            var templates = new MenuItem { Header = "Color themes", Tag = "themes", Icon = MenuGlyph("M1,1H6V6H1Z M10,1H15V6H10Z M1,10H6V15H1Z M10,10H15V15H10Z") };
             foreach (var palette in ThemePalette.All)
                 templates.Items.Add(ThemeMenuItem(palette));
             menu.Items.Add(templates);
-            var opacityMenu = new MenuItem { Header = "Sfondo · " + (preferences.Background * 100).ToString("0") + "%", Tag = "opacity", Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,1V15") };
+            var opacityMenu = new MenuItem { Header = "Background · " + (preferences.Background * 100).ToString("0") + "%", Tag = "opacity", Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,1V15") };
             foreach (double opacity in new[] { 0.0, 0.35, 0.60, 0.85 })
             {
                 double choice = opacity;
-                string label = opacity == 0 ? "Trasparente" : (opacity * 100).ToString("0") + "% di opacità";
+                string label = opacity == 0 ? "Transparent" : (opacity * 100).ToString("0") + "% opacity";
                 var item = Menu(label, delegate { preferences.Background = choice; ApplyPreferences(); SavePreferences(); }, Math.Abs(preferences.Background - choice) < 0.01, true);
                 item.Icon = new Border { Width = 12, Height = 12, CornerRadius = new CornerRadius(3), BorderBrush = Muted, BorderThickness = new Thickness(1), Background = Green, Opacity = Math.Max(0.15, choice) };
                 opacityMenu.Items.Add(item);
             }
             menu.Items.Add(opacityMenu);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
-            var desktopItem = Menu("Sempre sul desktop", delegate { }, true); desktopItem.Tag = "desktop"; desktopItem.IsEnabled = false; desktopItem.Icon = MenuGlyph("M1,2H15V12H1Z M8,12V15 M4,15H12"); menu.Items.Add(desktopItem);
-            var compact = Menu("Modalità compatta", ToggleCompact, preferences.Compact, true); compact.Tag = "compact"; compact.Icon = MenuGlyph("M1,2H15V7H1Z M1,10H15V15H1Z"); menu.Items.Add(compact);
+            var desktopItem = Menu("Always on desktop", delegate { }, true); desktopItem.Tag = "desktop"; desktopItem.IsEnabled = false; desktopItem.Icon = MenuGlyph("M1,2H15V12H1Z M8,12V15 M4,15H12"); menu.Items.Add(desktopItem);
+            var compact = Menu("Compact mode", ToggleCompact, preferences.Compact, true); compact.Tag = "compact"; compact.Icon = MenuGlyph("M1,2H15V7H1Z M1,10H15V15H1Z"); menu.Items.Add(compact);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
-            var info = Menu("Informazioni sui sensori", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
-            var visibility = Menu(IsVisible ? "Nascondi widget" : "Mostra widget", delegate { if (IsVisible) Hide(); else Reveal(); }, false); visibility.Icon = MenuGlyph("M1,8 Q8,-2 15,8 Q8,18 1,8 M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5"); menu.Items.Add(visibility);
-            var exit = Menu("Esci da NEON", delegate { Close(); }, false); exit.Icon = MenuGlyph("M8,1V8 M4,3 A6,6 0 1 0 12,3"); menu.Items.Add(exit);
+            var info = Menu("Sensor information", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
+            var visibility = Menu(IsVisible ? "Hide widget" : "Show widget", delegate { if (IsVisible) Hide(); else Reveal(); }, false); visibility.Icon = MenuGlyph("M1,8 Q8,-2 15,8 Q8,18 1,8 M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5"); menu.Items.Add(visibility);
+            var exit = Menu("Quit NEON", delegate { Close(); }, false); exit.Icon = MenuGlyph("M8,1V8 M4,3 A6,6 0 1 0 12,3"); menu.Items.Add(exit);
             return menu;
         }
         private ContextMenu CreateMenuChrome()
@@ -320,7 +320,7 @@ namespace Neon
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var main = CreateOptions(); main.Margin = new Thickness(12); main.VerticalAlignment = VerticalAlignment.Top;
             var themes = CreateMenuChrome(); themes.MinWidth = 220; themes.Margin = new Thickness(0, 12, 12, 12); themes.VerticalAlignment = VerticalAlignment.Top;
-            themes.Items.Add(new MenuItem { Header = "TEMPLATE COLORI", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
+            themes.Items.Add(new MenuItem { Header = "COLOR THEMES", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
             foreach (var palette in ThemePalette.All) themes.Items.Add(ThemeMenuItem(palette));
             grid.Children.Add(new Image { Source = App.RenderElement(main), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top });
             Place(grid, new Image { Source = App.RenderElement(themes), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top }, 0, 1); return grid;
@@ -359,26 +359,26 @@ namespace Neon
         public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); }
         public void CompactPreview()
         {
-            if (!preview) throw new InvalidOperationException("Solo per le anteprime.");
+            if (!preview) throw new InvalidOperationException("Preview mode only.");
             preferences.Compact = true; ApplyPreferences();
         }
         public void VerifyInterface()
         {
-            if (!preview) throw new InvalidOperationException("Verifica UI disponibile solo senza salvataggio preferenze.");
+            if (!preview) throw new InvalidOperationException("UI verification requires preview mode without saving preferences.");
             preferences.Compact = false; ApplyPreferences();
             UpdateLayout();
             shell.Measure(new Size(PanelWidth, Double.PositiveInfinity)); double fullHeight = shell.DesiredSize.Height;
             double fullWidth = ActualWidth;
             ToggleCompact(); UpdateLayout(); shell.Measure(new Size(PanelWidth, Double.PositiveInfinity));
-            if (shell.DesiredSize.Height >= fullHeight) throw new InvalidOperationException("Modalità compatta: altezza non ridotta.");
-            if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("La modalità compatta cambia larghezza.");
+            if (shell.DesiredSize.Height >= fullHeight) throw new InvalidOperationException("Compact mode did not reduce the height.");
+            if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Compact mode changed the width.");
             var area = new Rect(0, 0, 1536, 816);
             var corner = PositionInArea(area, new Size(300, 408), true, new Point(250, 16));
-            if (corner.X != 1236 || corner.Y != 0) throw new InvalidOperationException("Angolo predefinito non esatto.");
+            if (corner.X != 1236 || corner.Y != 0) throw new InvalidOperationException("Default corner placement is incorrect.");
             var secondary = PositionInArea(new Rect(-1920, -100, 1920, 1080), new Size(350, 400), true, new Point(0, 0));
-            if (secondary.X != -350 || secondary.Y != -100) throw new InvalidOperationException("Angolo su monitor secondario errato.");
+            if (secondary.X != -350 || secondary.Y != -100) throw new InvalidOperationException("Secondary monitor corner placement is incorrect.");
             var clamped = PositionInArea(area, new Size(350, 400), false, new Point(1450, 700));
-            if (clamped.X != 1186 || clamped.Y != 416) throw new InvalidOperationException("Pannello non contenuto nello schermo.");
+            if (clamped.X != 1186 || clamped.Y != 416) throw new InvalidOperationException("The panel extends beyond the screen.");
             double testLeft = Left, testTop = Top;
             preferences.DockToCorner = true;
             for (int transition = 0; transition < 3; transition++)
@@ -386,70 +386,70 @@ namespace Neon
                 UpdateLayout(); RestorePosition();
                 var workArea = CurrentWorkArea();
                 if (Math.Abs(Left + ActualWidth - workArea.Right) > 1 || Math.Abs(Top - workArea.Top) > 1)
-                    throw new InvalidOperationException("Il cambio di modalità perde l'angolo destro.");
-                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Scala instabile nel cambio di modalità.");
+                    throw new InvalidOperationException("Switching modes lost the top-right anchor.");
+                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("The scale changed when switching modes.");
                 ToggleCompact();
             }
             Left = testLeft; Top = testTop;
-            if (Topmost || ShowActivated) throw new InvalidOperationException("Il widget può prendere il primo piano.");
+            if (Topmost || ShowActivated) throw new InvalidOperationException("The widget can take foreground focus.");
             preferences.Background = 0; ApplyPreferences();
             if (((SolidColorBrush)shell.Background).Color.A != 0 || ((SolidColorBrush)cpu.Container.Background).Color.A != 0)
-                throw new InvalidOperationException("Trasparenza incompleta.");
+                throw new InvalidOperationException("The background is not fully transparent.");
             Update(new Snapshot { CoreAvailable = true, Cpu = 20, RamTotal = 100, RamUsed = 50, RamPercent = 50, CpuTemperature = null });
-            if (temperature.Value.Text != "N/D" || gpu.Value.Text != "N/D") throw new InvalidOperationException("Sensori mancanti visualizzati come valori reali.");
+            if (temperature.Value.Text != "N/A" || gpu.Value.Text != "N/A") throw new InvalidOperationException("Missing sensors are displayed as real readings.");
             Update(new Snapshot { CoreAvailable = true, CpuTemperature = 95, RamTotal = 100, RamUsed = 50, RamPercent = 50 });
-            if (!status.Text.Contains("TEMPERATURA ELEVATA")) throw new InvalidOperationException("Avviso termico assente.");
+            if (!status.Text.Contains("HIGH TEMPERATURE")) throw new InvalidOperationException("High-temperature alert is missing.");
             Update(new Snapshot { CoreAvailable = true, Cpu = 20, RamTotal = 100, RamUsed = 50, RamPercent = 50 });
-            if (temperature.Value.Text != "N/D" || status.Text.Contains("TEMPERATURA ELEVATA")) throw new InvalidOperationException("Sensore perso: dato precedente rimasto visibile.");
+            if (temperature.Value.Text != "N/A" || status.Text.Contains("HIGH TEMPERATURE")) throw new InvalidOperationException("A disconnected sensor still displays an old reading.");
             Update(new Snapshot { CoreAvailable = false });
-            if (ram.Value.Text != "N/D" || !status.Text.Contains("NON DISPONIBILE")) throw new InvalidOperationException("Errore di lettura non segnalato.");
+            if (ram.Value.Text != "N/A" || !status.Text.Contains("UNAVAILABLE")) throw new InvalidOperationException("A reading error was not reported.");
             var multi = new Snapshot { CoreAvailable = true, Disks = new List<DiskSnapshot> {
                 new DiskSnapshot { Name = "C:\\", Used = 40, Total = 100, IsSystem = true },
                 new DiskSnapshot { Name = "E:\\", Used = 98, Total = 100 }
             } };
             Update(multi);
-            if (diskRows.Count != 2 || !diskRows.ContainsKey("E:\\") || !status.Text.Contains("E:\\")) throw new InvalidOperationException("Seconda unità o suo avviso assente.");
+            if (diskRows.Count != 2 || !diskRows.ContainsKey("E:\\") || !status.Text.Contains("E:\\")) throw new InvalidOperationException("The second drive or its warning is missing.");
             preferences.Compact = false; ApplyPreferences(); UpdateLayout();
             if (ActualHeight > viewport.MaxHeight + 1 || ActualWidth >= 480 || !details.IsVisible)
-                throw new InvalidOperationException("Il pannello completo non rispetta metà altezza desktop.");
+                throw new InvalidOperationException("The full panel exceeds half the desktop height.");
             double desktopLimit = viewport.MaxHeight;
             viewport.MaxHeight = 300; UpdateLayout();
             var diskBounds = diskList.TransformToAncestor(viewport).TransformBounds(new Rect(diskList.RenderSize));
             if (ActualHeight > 301 || diskBounds.Bottom > viewport.ActualHeight + 1)
-                throw new InvalidOperationException("Monitor piccolo: unità tagliate o altezza eccessiva.");
+                throw new InvalidOperationException("Small screen: drives are clipped or the panel is too tall.");
             viewport.MaxHeight = desktopLimit; UpdateLayout();
-            multi.Disks[1].Total = 0; multi.Disks[1].Error = "Unità bloccata"; Update(multi);
-            if (!diskRows["E:\\"].Label.Text.Contains("N/D") || diskRows["E:\\"].Fill.Width != 0) throw new InvalidOperationException("Unità non accessibile mostrata con dati precedenti.");
+            multi.Disks[1].Total = 0; multi.Disks[1].Error = "Drive locked"; Update(multi);
+            if (!diskRows["E:\\"].Label.Text.Contains("N/A") || diskRows["E:\\"].Fill.Width != 0) throw new InvalidOperationException("An inaccessible drive still displays old readings.");
             multi.Disks.RemoveAt(1); Update(multi);
-            if (diskRows.Count != 1) throw new InvalidOperationException("Unità rimossa ancora visibile.");
+            if (diskRows.Count != 1) throw new InvalidOperationException("A removed drive is still visible.");
             foreach (var theme in ThemePalette.All)
             {
                 SetTheme(theme.Id);
-                if (Green.Color != Brush(theme.Primary).Color || cpu.Chart.Color != Green.Color || !themeLabel.Text.Contains(theme.Id.ToUpperInvariant())) throw new InvalidOperationException("Tema non applicato: " + theme.Id);
+                if (Green.Color != Brush(theme.Primary).Color || cpu.Chart.Color != Green.Color || !themeLabel.Text.Contains(theme.Id.ToUpperInvariant())) throw new InvalidOperationException("Theme was not applied: " + theme.Id);
             }
             var restored = new JavaScriptSerializer().Deserialize<Preferences>(new JavaScriptSerializer().Serialize(preferences));
-            if (restored.Theme != preferences.Theme) throw new InvalidOperationException("Tema non conservato nelle preferenze.");
-            SetTheme("tema-inesistente"); if (preferences.Theme != "matrix") throw new InvalidOperationException("Tema sconosciuto senza fallback.");
+            if (restored.Theme != preferences.Theme) throw new InvalidOperationException("The theme was not preserved in preferences.");
+            SetTheme("unknown-theme"); if (preferences.Theme != "matrix") throw new InvalidOperationException("An unknown theme has no fallback.");
             var options = CreateOptions();
             options.ApplyTemplate(); options.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             var themes = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "themes");
             var cyberpunk = themes.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "cyberpunk");
             cyberpunk.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            if (preferences.Theme != "cyberpunk") throw new InvalidOperationException("Selezione del tema dal menu non funzionante.");
+            if (preferences.Theme != "cyberpunk") throw new InvalidOperationException("Theme selection from the menu failed.");
             options = CreateOptions();
             var opacityMenu = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "opacity");
             ((MenuItem)opacityMenu.Items[2]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            if (Math.Abs(preferences.Background - 0.60) > 0.001) throw new InvalidOperationException("Selezione opacità dal menu non funzionante.");
+            if (Math.Abs(preferences.Background - 0.60) > 0.001) throw new InvalidOperationException("Opacity selection from the menu failed.");
             options = CreateOptions();
             var desktopItem = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "desktop");
-            if (desktopItem.IsEnabled || !desktopItem.IsChecked || Topmost) throw new InvalidOperationException("Modalità desktop non applicata.");
+            if (desktopItem.IsEnabled || !desktopItem.IsChecked || Topmost) throw new InvalidOperationException("Desktop mode was not applied.");
             var legacy = new JavaScriptSerializer().Deserialize<Preferences>("{\"Pinned\":true,\"Theme\":\"ice\"}");
-            if (legacy.Theme != "ice") throw new InvalidOperationException("Preferenze precedenti non compatibili.");
+            if (legacy.Theme != "ice") throw new InvalidOperationException("Legacy preferences are incompatible.");
             SetTheme("matrix");
         }
         private void ShowSensorInfo()
         {
-            MessageBox.Show(this, "CPU, RAM, disco e rete sono letti direttamente da Windows.\n\nPer le temperature CPU e i sensori AMD/Intel: avvia Libre Hardware Monitor e abilita il suo provider WMI. Alcuni sensori richiedono di eseguirlo come amministratore. NEON resta un'app senza privilegi elevati.\n\nPer NVIDIA, NEON prova anche nvidia-smi, se presente nel driver.\n\nN/D significa che il dato non è disponibile. Le temperature sono il massimo tra i sensori del dispositivo; non sono stime.\n\nI dati restano sul PC. Nessun account o servizio cloud.", "NEON // Sensori", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "CPU, RAM, disk and network data are read directly from Windows.\n\nFor CPU temperatures and AMD/Intel sensors, run Libre Hardware Monitor with its WMI provider enabled. Some sensors require running it as administrator. NEON runs without elevated privileges.\n\nFor NVIDIA, NEON also tries nvidia-smi if it is included with the driver.\n\nN/A means the reading is unavailable. Temperatures are the highest available readings for each device, not estimates.\n\nAll monitoring data stays on this PC. No account or cloud service is required.", "NEON // Sensors", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private async Task Refresh()
@@ -458,7 +458,7 @@ namespace Neon
             if (desktopLayer != null) desktopLayer.KeepBehind();
             reading = true;
             try { var sample = await Task.Run(() => telemetry.Read()); if (!shuttingDown) Update(sample); }
-            catch (Exception ex) { footer.Text = "●  LETTURA NON DISPONIBILE"; footer.ToolTip = ex.Message; }
+            catch (Exception ex) { footer.Text = "●  READING UNAVAILABLE"; footer.ToolTip = ex.Message; }
             finally { reading = false; }
         }
         public void Update(Snapshot s)
@@ -467,32 +467,32 @@ namespace Neon
             time.Text = s.Time.ToString("HH:mm:ss");
             cpuModel.Text = s.CpuName; cpuModel.ToolTip = s.CpuName;
             gpuModel.Text = s.GpuName; gpuModel.ToolTip = s.GpuName;
-            cpu.Container.ToolTip = s.CpuName + "\nGrafico degli ultimi 60 campioni.";
-            gpu.Container.ToolTip = s.GpuName + "\nGrafico degli ultimi 60 campioni.";
-            cpu.Value.Text = Percent(s.Cpu); cpu.Detail.Text = Environment.ProcessorCount + " THREAD LOGICI"; cpu.Chart.Push(s.Cpu);
-            ram.Value.Text = s.CoreAvailable ? s.RamPercent.ToString("0") + "%" : "N/D";
-            ram.Detail.Text = s.CoreAvailable ? GiB(s.RamUsed) + " / " + GiB(s.RamTotal) + " GiB" : "Lettura non disponibile"; ram.Chart.Push(s.CoreAvailable ? (double?)s.RamPercent : null);
-            gpu.Value.Text = Percent(s.Gpu); gpu.Detail.Text = s.GpuMemoryUsed.HasValue && s.GpuMemoryTotal.HasValue ? "VRAM " + GiB(s.GpuMemoryUsed.Value) + "/" + GiB(s.GpuMemoryTotal.Value) + " GiB" : s.Gpu.HasValue ? "UTILIZZO CORE" : "Sensore non esposto"; gpu.Chart.Push(s.Gpu);
+            cpu.Container.ToolTip = s.CpuName + "\nLast 60 samples.";
+            gpu.Container.ToolTip = s.GpuName + "\nLast 60 samples.";
+            cpu.Value.Text = Percent(s.Cpu); cpu.Detail.Text = Environment.ProcessorCount + " LOGICAL THREADS"; cpu.Chart.Push(s.Cpu);
+            ram.Value.Text = s.CoreAvailable ? s.RamPercent.ToString("0") + "%" : "N/A";
+            ram.Detail.Text = s.CoreAvailable ? GiB(s.RamUsed) + " / " + GiB(s.RamTotal) + " GiB" : "Reading unavailable"; ram.Chart.Push(s.CoreAvailable ? (double?)s.RamPercent : null);
+            gpu.Value.Text = Percent(s.Gpu); gpu.Detail.Text = s.GpuMemoryUsed.HasValue && s.GpuMemoryTotal.HasValue ? "VRAM " + GiB(s.GpuMemoryUsed.Value) + "/" + GiB(s.GpuMemoryTotal.Value) + " GiB" : s.Gpu.HasValue ? "CORE USAGE" : "Sensor unavailable"; gpu.Chart.Push(s.Gpu);
             temperature.Value.Text = Temperature(s.CpuTemperature); temperature.Detail.Text = "GPU " + Temperature(s.GpuTemperature); temperature.Chart.Scale = 110; temperature.Chart.Push(s.CpuTemperature);
-            temperature.Container.ToolTip = "CPU: massimo dei sensori CPU. GPU: massimo dei sensori GPU. Aggiornamento ogni 5 secondi.\n" + s.SensorSource + "\n" + s.SensorNote + (s.FanRpm.HasValue ? "\nVentola più veloce: " + s.FanRpm.Value.ToString("0") + " RPM" : "");
+            temperature.Container.ToolTip = "CPU: highest CPU sensor reading. GPU: highest GPU sensor reading. Updated every 5 seconds.\n" + s.SensorSource + "\n" + s.SensorNote + (s.FanRpm.HasValue ? "\nFastest fan: " + s.FanRpm.Value.ToString("0") + " RPM" : "");
             download.Text = Speed(s.Download); upload.Text = Speed(s.Upload);
             networkPeak = Math.Max(1024, Math.Max(Math.Max(s.Download, s.Upload), networkPeak * 0.98));
             downloadChart.Scale = uploadChart.Scale = networkPeak; downloadChart.Push(s.Download); uploadChart.Push(s.Upload);
             string previousDiskLayout = diskLayout;
             UpdateDisks(s.Disks);
             if (previousDiskLayout != diskLayout) UpdateViewportWidth();
-            memoryDetail.Text = s.CoreAvailable ? "COMMIT  " + GiB(s.CommitUsed) + " / " + GiB(s.CommitTotal) + " GiB" : "COMMIT  N/D";
-            memoryDetail.ToolTip = "Memoria impegnata dal sistema / limite di commit (RAM + file di paging).";
-            uptime.Text = "UPTIME  " + (int)s.Uptime.TotalDays + "g " + s.Uptime.Hours.ToString("00") + "h " + s.Uptime.Minutes.ToString("00") + "m";
-            uptime.ToolTip = "Tempo dall'avvio del kernel Windows; Avvio rapido può conservarlo tra spegnimenti.";
+            memoryDetail.Text = s.CoreAvailable ? "COMMIT  " + GiB(s.CommitUsed) + " / " + GiB(s.CommitTotal) + " GiB" : "COMMIT  N/A";
+            memoryDetail.ToolTip = "System committed memory / commit limit (RAM + page file).";
+            uptime.Text = "UPTIME  " + (int)s.Uptime.TotalDays + "d " + s.Uptime.Hours.ToString("00") + "h " + s.Uptime.Minutes.ToString("00") + "m";
+            uptime.ToolTip = "Time since the Windows kernel started; Fast Startup may preserve it across shutdowns.";
             bool hot = s.CpuTemperature >= 90 || s.GpuTemperature >= 85;
             bool pressure = s.RamPercent >= 90 || (s.Cpu.HasValue && s.Cpu >= 90);
             var fullDisk = s.Disks.FirstOrDefault(d => d.Total > 0 && d.Used / d.Total >= 0.95);
             bool full = fullDisk != null;
-            status.Text = !s.CoreAvailable ? "●  LETTURA SISTEMA NON DISPONIBILE" : hot ? "●  TEMPERATURA ELEVATA" : full ? "●  DISCO QUASI PIENO  " + fullDisk.Name : pressure ? "●  CARICO ELEVATO" : "●  SISTEMA OPERATIVO";
+            status.Text = !s.CoreAvailable ? "●  SYSTEM READING UNAVAILABLE" : hot ? "●  HIGH TEMPERATURE" : full ? "●  DRIVE ALMOST FULL  " + fullDisk.Name : pressure ? "●  HIGH LOAD" : "●  SYSTEM RUNNING";
             status.Foreground = hot || pressure || full || !s.CoreAvailable ? Amber : Green; status.ToolTip = status.Text;
             temperature.Value.Foreground = s.CpuTemperature >= 90 ? Amber : White;
-            footer.Text = s.Error != null ? "●  ALCUNE LETTURE NON DISPONIBILI" : s.CpuTemperature.HasValue ? "●  SENSORI CONNESSI   /   STORICO 60 CAMPIONI" : "○  TEMP CPU N/D   /   INFO SENSORI NEL MENU";
+            footer.Text = s.Error != null ? "●  SOME READINGS UNAVAILABLE" : s.CpuTemperature.HasValue ? "●  SENSORS CONNECTED   /   60-SAMPLE HISTORY" : "○  CPU TEMP N/A   /   SENSOR INFO IN MENU";
             footer.ToolTip = s.Error ?? (s.SensorSource + "\n" + s.SensorNote);
             if (tray != null) tray.Text = "NEON | CPU " + Percent(s.Cpu) + " | RAM " + s.RamPercent.ToString("0") + "%";
         }
@@ -517,14 +517,14 @@ namespace Neon
                     row.Track.SizeChanged += delegate { SizeDiskBar(row); };
                     diskRows[disk.Name] = row;
                 }
-                if (disks.Count == 0) diskList.Children.Add(Text("Nessuna unità fissa disponibile", 11, Muted, false));
+                if (disks.Count == 0) diskList.Children.Add(Text("No fixed drives available", 11, Muted, false));
             }
             foreach (var disk in disks)
             {
                 var row = diskRows[disk.Name]; row.Data = disk;
-                row.Label.Text = disk.Name + (disk.Total > 0 ? "  " + (100 * disk.Used / disk.Total).ToString("0") + "%" : "  N/D") + (disk.IsSystem ? "  SYS" : "");
-                row.Detail.Text = disk.Total > 0 ? GiB(disk.Used) + " / " + GiB(disk.Total) + " GiB" : "Non disponibile";
-                row.Label.ToolTip = disk.Error ?? (disk.Label + (disk.IsSystem ? " · Unità di sistema" : ""));
+                row.Label.Text = disk.Name + (disk.Total > 0 ? "  " + (100 * disk.Used / disk.Total).ToString("0") + "%" : "  N/A") + (disk.IsSystem ? "  SYS" : "");
+                row.Detail.Text = disk.Total > 0 ? GiB(disk.Used) + " / " + GiB(disk.Total) + " GiB" : "Unavailable";
+                row.Label.ToolTip = disk.Error ?? (disk.Label + (disk.IsSystem ? " · System drive" : ""));
                 SizeDiskBar(row);
             }
         }
@@ -535,8 +535,8 @@ namespace Neon
             row.Fill.Width = row.Track.ActualWidth * fraction;
             row.Fill.Background = fraction >= 0.95 ? Amber : Green;
         }
-        private static string Percent(double? value) { return value.HasValue ? value.Value.ToString("0") + "%" : "N/D"; }
-        private static string Temperature(double? value) { return value.HasValue ? value.Value.ToString("0") + "°C" : "N/D"; }
+        private static string Percent(double? value) { return value.HasValue ? value.Value.ToString("0") + "%" : "N/A"; }
+        private static string Temperature(double? value) { return value.HasValue ? value.Value.ToString("0") + "°C" : "N/A"; }
         private static string GiB(double bytes) { return (bytes / 1073741824.0).ToString("0.0"); }
         public static string Speed(double bytes)
         {

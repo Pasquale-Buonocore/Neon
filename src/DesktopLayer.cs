@@ -45,7 +45,7 @@ namespace Neon
         {
             window = owner; handle = new WindowInteropHelper(owner).Handle;
             source = HwndSource.FromHwnd(handle);
-            if (source == null) throw new InvalidOperationException("Finestra desktop non inizializzata.");
+            if (source == null) throw new InvalidOperationException("Desktop window is not initialized.");
             taskbarCreated = RegisterWindowMessage("TaskbarCreated");
             desktop = FindDesktop();
             source.AddHook(WindowMessage);
@@ -69,7 +69,7 @@ namespace Neon
             if (!SetWindowPos(handle, Bottom, 0, 0, 0, 0, flags))
             {
                 int error = Marshal.GetLastWin32Error();
-                throw new Win32Exception(error, "Impossibile mantenere NEON sul desktop (" + error + ").");
+                throw new Win32Exception(error, "Could not keep NEON on the desktop (" + error + ").");
             }
         }
         private IntPtr DesktopInsertAfter()

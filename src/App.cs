@@ -17,6 +17,8 @@ namespace Neon
         [STAThread]
         public static int Main(string[] args)
         {
+            CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("en-US");
             try
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
@@ -40,7 +42,7 @@ namespace Neon
                     testWindow.ShowActivated = false; testWindow.Left = -32000; testWindow.Top = -32000;
                     testWindow.Show(); testWindow.UpdateLayout();
                     testWindow.VerifyInterface(); testWindow.Close(); testApp.Shutdown();
-                    File.WriteAllText(args[1], "UI OK: metà altezza desktop, monitor piccolo senza tagli, compatta, modalità desktop, trasparenza, sensori mancanti, allarmi, unità multiple, unità inaccessibile/rimossa, sei temi e preferenze. Dimensioni finali: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
+                    File.WriteAllText(args[1], "UI OK: half-desktop height, small-screen fit, compact mode, desktop placement, transparency, missing sensors, alerts, multiple/unavailable/removed drives, six themes and preferences. Final size: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
                     return 0;
                 }
                 bool created;
@@ -59,36 +61,36 @@ namespace Neon
             catch (Exception ex)
             {
                 try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "neon-error.log"), ex.ToString()); } catch { }
-                if (args.Length == 0) MessageBox.Show("NEON non è riuscito ad avviarsi.\n\n" + ex.Message, "NEON // Errore", MessageBoxButton.OK, MessageBoxImage.Error);
+                if (args.Length == 0) MessageBox.Show("NEON could not start.\n\n" + ex.Message, "NEON // Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
         }
 
         private static void Assert(bool condition, string description)
         {
-            if (!condition) throw new InvalidOperationException("Verifica fallita: " + description);
+            if (!condition) throw new InvalidOperationException("Verification failed: " + description);
         }
         private static int Verify(string path)
         {
-            Assert(Telemetry.CpuUsage(40, 80, 20) == 60, "CPU: il tempo kernel include idle");
-            Assert(!Telemetry.CpuUsage(0, 0, 0).HasValue, "CPU: campione vuoto non è 0%");
-            Assert(!Telemetry.CpuUsage(-1, 2, 3).HasValue, "CPU: contatori azzerati");
+            Assert(Telemetry.CpuUsage(40, 80, 20) == 60, "CPU: kernel time includes idle time");
+            Assert(!Telemetry.CpuUsage(0, 0, 0).HasValue, "CPU: an empty sample is not 0%");
+            Assert(!Telemetry.CpuUsage(-1, 2, 3).HasValue, "CPU: counters reset");
             var rates = new RateCounter();
-            Assert(rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 100, 200 } } }, 1)[0] == 0, "Rete: primo campione");
+            Assert(rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 100, 200 } } }, 1)[0] == 0, "Network: first sample");
             var next = rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 300, 300 } } }, 3);
-            Assert(next[0] == 100 && next[1] == 50, "Rete: byte/s con intervallo effettivo");
-            Assert(rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 1, 1 } }, { "b", new long[] { 999999, 999999 } } }, 4)[0] == 0, "Rete: reset e nuova interfaccia");
-            Assert(rates.Sample(new Dictionary<string, long[]>(), 5)[0] == 0, "Rete: disconnessione");
-            Assert(MonitorWindow.Speed(1048576).EndsWith("MiB/s"), "Unità rete binarie");
-            using (var icon = BrandIcon.Tray()) Assert(icon.Width == 16 && icon.Height == 16, "Icona area di notifica a 16 pixel");
-            Assert(BrandIcon.Window(128).PixelWidth == 128, "Icona ad alta risoluzione incorporata");
+            Assert(next[0] == 100 && next[1] == 50, "Network: bytes/s using the actual interval");
+            Assert(rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 1, 1 } }, { "b", new long[] { 999999, 999999 } } }, 4)[0] == 0, "Network: reset and new interface");
+            Assert(rates.Sample(new Dictionary<string, long[]>(), 5)[0] == 0, "Network: disconnection");
+            Assert(MonitorWindow.Speed(1048576).EndsWith("MiB/s"), "Binary network units");
+            using (var icon = BrandIcon.Tray()) Assert(icon.Width == 16 && icon.Height == 16, "16-pixel notification-area icon");
+            Assert(BrandIcon.Window(128).PixelWidth == 128, "Embedded high-resolution icon");
             var reader = new Telemetry(); reader.Read(); Thread.Sleep(1100); var sample = reader.Read();
-            Assert(sample.CoreAvailable && sample.RamTotal > 0 && sample.RamUsed <= sample.RamTotal, "Memoria fisica reale");
-            Assert(sample.Cpu >= 0 && sample.Cpu <= 100, "CPU reale");
-            Assert(sample.Disks.Any(d => d.IsSystem && d.Total > 0) && sample.Disks.All(d => d.Used <= d.Total), "Dischi reali");
+            Assert(sample.CoreAvailable && sample.RamTotal > 0 && sample.RamUsed <= sample.RamTotal, "Live physical memory");
+            Assert(sample.Cpu >= 0 && sample.Cpu <= 100, "Live CPU");
+            Assert(sample.Disks.Any(d => d.IsSystem && d.Total > 0) && sample.Disks.All(d => d.Used <= d.Total), "Live drives");
             var expected = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed).Select(d => d.Name).OrderBy(n => n);
-            Assert(expected.SequenceEqual(sample.Disks.Select(d => d.Name).OrderBy(n => n)), "Tutte le unità fisse incluse");
-            Assert(sample.Download >= 0 && sample.Upload >= 0 && sample.Uptime.TotalSeconds > 0, "Rete e uptime reali");
+            Assert(expected.SequenceEqual(sample.Disks.Select(d => d.Name).OrderBy(n => n)), "All fixed drives included");
+            Assert(sample.Download >= 0 && sample.Upload >= 0 && sample.Uptime.TotalSeconds > 0, "Live network and uptime");
             File.WriteAllText(path, new JavaScriptSerializer().Serialize(new { passed = 15, sample = sample }));
             return 0;
         }

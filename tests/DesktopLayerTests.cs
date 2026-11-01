@@ -49,23 +49,23 @@ namespace Neon
                 IntPtr hwnd = new WindowInteropHelper(monitor).Handle;
                 IntPtr firstHandle = new WindowInteropHelper(first).Handle, secondHandle = new WindowInteropHelper(second).Handle;
                 long styles = GetWindowLongPtr(hwnd, -20).ToInt64();
-                Assert((styles & 0x08000000) != 0 && (styles & 8) == 0, "stili nativi di non attivazione e non topmost");
-                Assert(Above(firstHandle, hwnd) && Above(secondHandle, hwnd), "posizione dietro a entrambe le altre finestre");
+                Assert((styles & 0x08000000) != 0 && (styles & 8) == 0, "native no-activation and non-topmost styles");
+                Assert(Above(firstHandle, hwnd) && Above(secondHandle, hwnd), "placement behind both other windows");
                 IntPtr desktop = GetShellWindow();
-                if (desktop != IntPtr.Zero && IsWindowVisible(desktop)) Assert(Above(hwnd, desktop), "widget visibile sopra il desktop di Explorer");
-                Assert(SendMessage(hwnd, 0x0021, IntPtr.Zero, IntPtr.Zero) == new IntPtr(3), "click senza attivazione, con consegna degli eventi");
-                Assert(SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 1 | 2 | 0x10), "simulazione richiesta di primo piano");
+                if (desktop != IntPtr.Zero && IsWindowVisible(desktop)) Assert(Above(hwnd, desktop), "widget visible above the Explorer desktop");
+                Assert(SendMessage(hwnd, 0x0021, IntPtr.Zero, IntPtr.Zero) == new IntPtr(3), "clicks delivered without activation");
+                Assert(SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 1 | 2 | 0x10), "simulated foreground request");
                 Pump(monitor);
-                Assert((GetWindowLongPtr(hwnd, -20).ToInt64() & 8) == 0 && Above(firstHandle, hwnd), "richiesta topmost bloccata");
+                Assert((GetWindowLongPtr(hwnd, -20).ToInt64() & 8) == 0 && Above(firstHandle, hwnd), "topmost request blocked");
                 second.WindowState = WindowState.Minimized; Pump(monitor);
-                Assert(Above(firstHandle, hwnd) && GetForegroundWindow() != hwnd, "minimizzazione di un'altra finestra senza foreground NEON");
+                Assert(Above(firstHandle, hwnd) && GetForegroundWindow() != hwnd, "minimizing another window without foregrounding NEON");
                 monitor.Hide(); monitor.Reveal(); Pump(monitor);
-                Assert(monitor.IsVisible && Above(firstHandle, hwnd) && GetForegroundWindow() != hwnd, "richiamo dall'icona senza primo piano");
+                Assert(monitor.IsVisible && Above(firstHandle, hwnd) && GetForegroundWindow() != hwnd, "showing from the tray without foreground focus");
                 monitor.Left += 20; Pump(monitor);
-                Assert(Above(firstHandle, hwnd), "spostamento senza alzare il widget");
+                Assert(Above(firstHandle, hwnd), "moving without raising the widget");
                 monitor.WindowState = WindowState.Minimized; Pump(monitor);
-                Assert(monitor.WindowState == WindowState.Normal && Above(firstHandle, hwnd), "ripristino al livello desktop dopo minimizzazione");
-                return "Desktop OK: stili Win32, ordine dietro a due finestre, click senza attivazione, blocco topmost, minimizzazione altra app, richiamo, spostamento e ripristino.";
+                Assert(monitor.WindowState == WindowState.Normal && Above(firstHandle, hwnd), "restoring to the desktop layer after minimization");
+                return "Desktop OK: Win32 styles, placement behind two windows, clicks without activation, blocked topmost requests, minimizing another app, showing, moving and restoring the widget.";
             }
             finally { monitor.Close(); second.Close(); first.Close(); }
         }

@@ -4,7 +4,7 @@ $projectRoot = $PSScriptRoot
 $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $compiler = Join-Path $framework 'csc.exe'
 if (!(Test-Path -LiteralPath $compiler)) {
-    throw 'Serve .NET Framework 4.x per compilare NEON (incluso in Windows 10/11).'
+    throw '.NET Framework 4.x is required to build NEON (included with Windows 10/11).'
 }
 $output = Join-Path $projectRoot 'bin'
 New-Item -ItemType Directory -Path $output -Force | Out-Null
@@ -17,5 +17,5 @@ $sources = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter '*.cs' | ForEach-Object { $_.FullName }
 & (Join-Path $projectRoot 'assets\build-icon.ps1')
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /utf8output "/out:$output\$ExecutableName" "/win32manifest:$projectRoot\src\app.manifest" "/win32icon:$projectRoot\assets\neon.ico" "/resource:$projectRoot\assets\neon.ico,Neon.Icon" "/resource:$projectRoot\src\MenuStyles.xaml,Neon.MenuStyles" $references $sources
-if ($LASTEXITCODE -ne 0) { throw 'Compilazione non riuscita.' }
-Write-Host "Pronto: $output\$ExecutableName"
+if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+Write-Host "Ready: $output\$ExecutableName"

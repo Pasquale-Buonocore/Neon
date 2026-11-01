@@ -26,7 +26,7 @@ namespace Neon
         public List<DiskSnapshot> Disks = new List<DiskSnapshot>();
         public string CpuName = "CPU", GpuName = "GPU";
         public double? Gpu, GpuMemoryUsed, GpuMemoryTotal, CpuTemperature, GpuTemperature, FanRpm;
-        public string SensorSource = "Nessun provider", SensorNote = "";
+        public string SensorSource = "No provider", SensorNote = "";
         public TimeSpan Uptime;
         public bool CoreAvailable;
         public string Error;
@@ -73,10 +73,10 @@ namespace Neon
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private long lastIdle, lastKernel, lastUser;
         private bool cpuPrimed, identified;
-        private string cpuName = "CPU", gpuName = "GPU non rilevata", nvidiaPath;
+        private string cpuName = "CPU", gpuName = "GPU not detected", nvidiaPath;
         private DateTime sensorTime = DateTime.MinValue;
         private double? cpuTemp, gpuTemp, gpuLoad, gpuUsed, gpuTotal, fan;
-        private string source = "Nessun provider", sensorNote = "";
+        private string source = "No provider", sensorNote = "";
 
         public static double? CpuUsage(long idleDelta, long kernelDelta, long userDelta)
         {
@@ -99,13 +99,13 @@ namespace Neon
                 }
                 var memory = new MemoryStatus();
                 memory.Length = (uint)Marshal.SizeOf(memory);
-                if (!GlobalMemoryStatusEx(ref memory)) throw new InvalidOperationException("Memoria non disponibile");
+                if (!GlobalMemoryStatusEx(ref memory)) throw new InvalidOperationException("Memory unavailable");
                 s.RamTotal = memory.TotalPhys; s.RamUsed = memory.TotalPhys - memory.AvailPhys;
                 s.RamPercent = 100.0 * s.RamUsed / s.RamTotal;
                 s.CommitTotal = memory.TotalPageFile; s.CommitUsed = memory.TotalPageFile - memory.AvailPageFile;
                 s.Uptime = TimeSpan.FromMilliseconds(GetTickCount64()); s.CoreAvailable = true;
             }
-            catch (Exception ex) { errors.Add("Sistema: " + ex.Message); }
+            catch (Exception ex) { errors.Add("System: " + ex.Message); }
             try
             {
                 var counters = new Dictionary<string, long[]>();
@@ -118,7 +118,7 @@ namespace Neon
                 var rates = network.Sample(counters, clock.Elapsed.TotalSeconds);
                 s.Download = rates[0]; s.Upload = rates[1];
             }
-            catch (Exception ex) { errors.Add("Rete: " + ex.Message); }
+            catch (Exception ex) { errors.Add("Network: " + ex.Message); }
             try
             {
                 string system = Path.GetPathRoot(Environment.SystemDirectory);
@@ -127,14 +127,14 @@ namespace Neon
                     var disk = new DiskSnapshot { Name = drive.Name, IsSystem = String.Equals(drive.Name, system, StringComparison.OrdinalIgnoreCase) };
                     try
                     {
-                        if (!drive.IsReady) disk.Error = "Unità non disponibile";
+                        if (!drive.IsReady) disk.Error = "Drive unavailable";
                         else { disk.Total = drive.TotalSize; disk.Used = drive.TotalSize - drive.TotalFreeSpace; disk.Label = drive.VolumeLabel; }
                     }
-                    catch (Exception ex) { disk.Error = "Unità non accessibile"; errors.Add(drive.Name + ": " + ex.Message); }
+                    catch (Exception ex) { disk.Error = "Drive inaccessible"; errors.Add(drive.Name + ": " + ex.Message); }
                     s.Disks.Add(disk);
                 }
             }
-            catch (Exception ex) { errors.Add("Disco: " + ex.Message); }
+            catch (Exception ex) { errors.Add("Disk: " + ex.Message); }
             if (!identified) { Identify(); identified = true; }
             if ((DateTime.UtcNow - sensorTime).TotalSeconds >= 5)
             {
@@ -194,7 +194,7 @@ namespace Neon
         {
             // Never keep the previous temperature when a provider disappears.
             cpuTemp = gpuTemp = gpuLoad = gpuUsed = gpuTotal = fan = null;
-            source = "Nessun provider"; sensorNote = "";
+            source = "No provider"; sensorNote = "";
             foreach (var provider in new[] { "LibreHardwareMonitor", "OpenHardwareMonitor" })
             {
                 try
@@ -248,7 +248,7 @@ namespace Neon
             // Keep a complete GPU group from one provider rather than mixing devices.
             if (nvidiaPath != null && !gpuLoad.HasValue && !gpuTemp.HasValue) ReadNvidia();
             if (!cpuTemp.HasValue)
-                sensorNote = "Temperatura CPU non esposta. Avvia Libre Hardware Monitor con WMI attivo; alcuni sensori richiedono diritti amministrativi.";
+                sensorNote = "CPU temperature is unavailable. Run Libre Hardware Monitor with WMI enabled; some sensors require administrator privileges.";
         }
 
         private void ReadNvidia()
@@ -272,7 +272,7 @@ namespace Neon
                     var used = Number(fields[3]); var total = Number(fields[4]);
                     gpuUsed = used.HasValue ? used * 1048576 : null;
                     gpuTotal = total.HasValue ? total * 1048576 : null;
-                    source = source == "Nessun provider" ? "NVIDIA SMI" : source + " + NVIDIA";
+                    source = source == "No provider" ? "NVIDIA SMI" : source + " + NVIDIA";
                 }
             }
             catch { }

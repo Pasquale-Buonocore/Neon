@@ -16,7 +16,7 @@ foreach ($mode in @('self-test', 'ui-test', 'desktop-test', 'snapshot', 'gallery
     }
     $resultPath = Join-Path $artifactRoot $filename
     $process = Start-Process -FilePath (Join-Path $projectRoot "bin\$ExecutableName") -ArgumentList "--$mode", ('"' + $resultPath + '"') -WindowStyle Hidden -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "Verifica $mode fallita. Controlla bin\neon-error.log." }
-    if (!(Test-Path -LiteralPath $resultPath)) { throw "Risultato mancante: $resultPath" }
+    if ($process.ExitCode -ne 0) { throw "Verification $mode failed. Check bin\neon-error.log." }
+    if (!(Test-Path -LiteralPath $resultPath)) { throw "Missing result: $resultPath" }
     Write-Host "OK: $mode"
 }

@@ -1,66 +1,72 @@
 # NEON // PC Monitor
 
-Un widget nativo per Windows 10/11 a 64 bit: sfondo trasparente, pannello rettangolare verticale con angoli arrotondati, caratteri da terminale e grafici essenziali. Il pannello occupa al massimo metà dell'altezza dell'area desktop disponibile sul monitor e riduce la larghezza in proporzione, considerando la scala DPI di Windows. L'interfaccia ha spazi ridotti e conserva CPU, RAM, GPU, temperature, rete e unità nella vista completa. Vive sul desktop e mostra lo stato del computer mentre lavori o giochi.
+A native desktop widget for 64-bit Windows 10/11, with a transparent background, a vertical panel with rounded corners, terminal typography and compact charts. The panel uses at most half the available desktop height and scales its width proportionally, accounting for Windows DPI scaling. Full mode shows CPU, RAM, GPU, temperatures, network traffic and local drives while you work or play.
 
-## Avvio
+## Getting started
 
-Fai doppio clic su **Avvia.cmd**, oppure apri **bin/NeonMonitor.exe** dopo la compilazione. Non serve installare Python, Node o un SDK. Usa .NET Framework 4.x e WPF, inclusi nelle normali installazioni di Windows 10/11.
+Double-click **Start.cmd**, or run **bin/NeonMonitor.exe** after building the project. Python, Node and a separate SDK are not required. NEON uses .NET Framework 4.x and WPF, normally included with Windows 10/11.
 
-Il programma non richiede privilegi amministrativi. Un secondo avvio riapre il widget esistente.
+Administrator privileges are not required. Launching a second instance shows the existing widget. The interface, messages and numeric formatting use English.
 
-## Cosa fa la prima versione
+## Features
 
-| Area | Dati |
+| Area | Readings |
 | --- | --- |
-| CPU | Utilizzo totale, modello e numero di thread logici |
-| RAM | Percentuale, memoria usata/totale e memoria impegnata rispetto al limite di commit |
-| GPU | Utilizzo, modello e VRAM quando esposti dal provider |
-| Temperature | Massimo dei sensori CPU e GPU disponibili; aggiornamento ogni 5 secondi |
-| Rete | Download e upload aggregati sulle interfacce attive, in B/s, KiB/s e MiB/s |
-| Dischi | Tutte le unità locali fisse (sul PC attuale C: ed E:), ognuna con spazio occupato, capacità e barra percentuale; SYS identifica l'unità di sistema |
-| Sessione | Orologio e tempo dall'avvio del kernel Windows |
+| CPU | Total usage, processor model and logical thread count |
+| RAM | Usage percentage, used/total physical memory and committed memory relative to the commit limit |
+| GPU | Usage, model and VRAM when exposed by the provider |
+| Temperatures | Highest available CPU and GPU sensor readings, refreshed every five seconds |
+| Network | Combined download and upload rates across active interfaces, in B/s, KiB/s and MiB/s |
+| Drives | All fixed local volumes, each with used space, capacity and a usage bar; SYS identifies the system drive |
+| Session | Clock and time since the Windows kernel started |
 
-- Letture di sistema circa ogni secondo e grafici degli ultimi 60 campioni. I campioni rimangono solo in memoria; nessuna cronologia è salvata su disco.
-- Spostamento trascinando la scritta `NEON / SYS`.
-- Per impostazione predefinita il bordo del pannello coincide con l'angolo in alto a destra dell'area desktop disponibile. La modalità compatta mantiene la larghezza, la scala e l'aggancio all'angolo. Se trascini il widget altrove, la posizione viene salvata; avvicinandolo nuovamente all'angolo si riattiva l'aggancio.
-- Il widget resta sul desktop, dietro alle altre applicazioni, e non prende il primo piano quando clicchi il pannello, richiami l'app o riduci a icona un'altra finestra. Rimane trascinabile e il menu è accessibile dal pannello o dall'icona nell'area di notifica.
-- Pulsante `=` per il pannello compatto. La modalità «Sempre in primo piano» è stata rimossa; le vecchie preferenze che la attivavano vengono ignorate.
-- La dimensione si adatta al monitor: anche la vista completa resta entro metà altezza desktop. I modelli di CPU e GPU si leggono passando il mouse sui rispettivi riquadri.
-- Menu `···` o tasto destro: menu scuro con simboli, spunte e sottomenu. In `Sfondo` scegli la trasparenza completa oppure il 35%, 60% o 85% di opacità. Testo e linee mantengono la loro leggibilità. Lo stesso menu è disponibile con il tasto destro sull'icona nell'area di notifica.
-- Nel menu `··· → Template colori` trovi **Matrix** (verde), **Ice** (azzurro), **Cyberpunk** (viola e ciano), **Amber** (arancio), **Crimson** (rosso) e **Ghost** (bianco). Cambiano testo, grafici, bordi e sfondi; le segnalazioni conservano un colore di attenzione. La scelta è salvata e viene ripristinata al prossimo avvio.
-- `−` nasconde il pannello. Doppio clic sull'icona nell'area di notifica per mostrarlo. `×` chiude l'app.
-- L'icona NEON è una N verde su fondo scuro, presente nell'eseguibile, nella finestra e nell'area di notifica. La versione ICO contiene otto dimensioni da 16 a 256 pixel; il sorgente vettoriale è `assets/neon.svg` e la generazione è riproducibile con `assets/build-icon.ps1`.
-- Posizione, trasparenza, tema e modalità salvati in `data/settings.json` nella cartella del progetto.
-- Indicatori visivi per temperature alte (CPU da 90 °C, GPU da 85 °C), CPU/RAM dal 90%, disco dal 95%. Sono soglie indicative fisse, non diagnosi sullo stato dell'hardware.
-- Nessun account, telemetria remota o collegamento a servizi cloud. L'app non modifica clock, ventole o impostazioni hardware.
+- System readings refresh approximately once a second. Charts show the last 60 samples, kept only in memory. No monitoring history is saved to disk.
+- Drag `NEON / SYS` to move the widget.
+- By default, the panel sits exactly in the top-right corner of the available desktop area. Compact mode preserves its width, scale and corner anchor. Dragging it elsewhere saves a custom position; moving it back near the corner restores docking.
+- The widget stays on the desktop, behind other applications. Clicking it, showing it from the tray or minimizing another window does not bring it to the foreground. It remains draggable, with settings accessible from the panel or notification-area icon.
+- Use `=` to toggle compact mode. The previous always-on-top option has been removed, and legacy preferences enabling it are ignored.
+- Full mode stays within half the desktop height. Hover over the CPU and GPU cards to see their model names.
+- Open `···` or right-click for a dark menu with icons, checkmarks and submenus. Under `Background`, select full transparency or 35%, 60% or 85% opacity. Text and chart lines remain legible. Right-clicking the notification-area icon opens the same menu.
+- Under `··· → Color themes`, choose **Matrix** (green), **Ice** (blue), **Cyberpunk** (purple and cyan), **Amber** (orange), **Crimson** (red) or **Ghost** (white). Themes change text, charts, borders and backgrounds while preserving warning colors. The selection is restored on the next launch.
+- `−` hides the panel. Double-click the notification-area icon to show it. `×` closes the app.
+- The NEON icon is a green N on a dark background, embedded in the executable, window and notification area. The ICO contains eight sizes from 16 to 256 pixels. Its vector source is `assets/neon.svg`, and `assets/build-icon.ps1` generates the icon reproducibly.
+- Position, opacity, theme and display mode are saved in `data/settings.json` inside the project folder.
+- Visual alerts indicate high temperatures (CPU at 90 °C, GPU at 85 °C), CPU/RAM usage at 90% and drive usage at 95%. These fixed thresholds are general indicators, not hardware diagnostics.
+- No account, remote telemetry or cloud service is required. NEON does not change hardware clocks, fan settings or other hardware controls.
 
-Il riquadro dischi elenca i volumi con lettera di unità, non i dispositivi fisici: un dispositivo partizionato può comparire più volte. Le unità non accessibili restano visibili come N/D; quelle rimosse spariscono alla lettura successiva. Se l'elenco è lungo, puoi scorrerlo. Supporti rimovibili e unità di rete non sono inclusi.
+The drive list shows volumes with drive letters, rather than physical devices: multiple partitions on one device may appear separately. Inaccessible volumes remain listed as N/A, while removed volumes disappear on the next refresh. Long lists can be scrolled. Removable media and network drives are excluded.
 
-## Temperature e sensori GPU
+## Temperatures and GPU sensors
 
-Windows non offre una temperatura CPU universale. **N/D** indica un valore non disponibile, non una temperatura pari a zero.
+Windows does not expose a universal CPU temperature reading. **N/A** means a reading is unavailable, not that its value is zero.
 
-1. Per le GPU NVIDIA, NEON cerca `nvidia-smi.exe` nel driver e legge carico, temperatura e VRAM della prima GPU. Non occorre un altro programma se il driver espone queste informazioni.
-2. Per CPU e altre GPU, puoi usare [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), avviato sul PC con il provider WMI disponibile. Alcuni sensori richiedono di avviare **Libre Hardware Monitor** come amministratore. NEON non lo installa né lo avvia automaticamente.
-3. È supportato anche il provider WMI di Open Hardware Monitor. Quando il provider scompare, i valori non più disponibili tornano a N/D.
+1. For NVIDIA GPUs, NEON looks for `nvidia-smi.exe` in the driver installation and reads usage, temperature and VRAM for the first GPU. No additional monitoring app is needed when the driver exposes these readings.
+2. For CPU temperatures and other GPUs, run [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) with its WMI provider available. Some sensors require running **Libre Hardware Monitor** as administrator. NEON does not install or launch it automatically.
+3. The Open Hardware Monitor WMI provider is also supported. Readings return to N/A when their provider becomes unavailable.
 
-Le letture WMI e NVIDIA avvengono in background. L'app rimane utilizzabile durante le interrogazioni. Il valore termico mostrato è il massimo dei sensori del dispositivo, che può includere core, package o hotspot a seconda del provider. Le metriche GPU provengono dallo stesso dispositivo; la prima GPU esposta dal provider è quella monitorata. Nessuna stima basata sul carico.
+WMI and NVIDIA queries run in the background so the interface remains responsive. Temperatures are the highest available readings for each device, which may include core, package or hotspot sensors depending on the provider. GPU metrics come from the same device: the first GPU exposed by the provider. Temperatures are never estimated from utilization.
 
-I contatori di rete sommano le interfacce attive: con VPN o adattatori virtuali alcuni pacchetti possono essere conteggiati su più interfacce. L'uptime può comprendere precedenti sessioni se Windows usa Avvio rapido. Non ci sono notifiche sonore o popup periodici.
+Network counters add up active interfaces, so VPNs and virtual adapters may count traffic on more than one interface. Uptime may span previous sessions when Windows Fast Startup is enabled. NEON does not issue periodic popups or sound notifications.
 
-## Sviluppo e verifica
+## Building and verification
 
 ```powershell
 .\build.ps1
 .\tests\verify.ps1
 ```
 
-Il compilatore usato è quello di .NET Framework già presente in Windows. Il codice è C# con UI WPF; nessun pacchetto esterno da scaricare.
+The build uses the .NET Framework compiler already installed with Windows. The application is written in C# with a WPF interface and requires no external packages.
 
-Le verifiche coprono il calcolo CPU, le velocità di rete con intervalli effettivi, reset dei contatori, aggiunta/rimozione di adattatori e letture reali di tutte le unità fisse. La verifica UI controlla modalità compatta, modalità desktop, trasparenza, allarmi, sensori mancanti, unità multiple/non accessibili/rimosse e tutti i temi; genera anche `artifacts/neon-preview.png` e la galleria `artifacts/neon-themes.png` con dati reali. La verifica UI usa campioni sintetici solo per esercitare gli stati di errore, mai nella modalità normale o nelle anteprime.
+Verification covers CPU calculations, network rates using actual intervals, counter resets, interface changes and live readings from all fixed drives. UI checks cover compact mode, stable scaling, corner placement, desktop mode, transparency, alerts, unavailable sensors, multiple/inaccessible/removed drives, themes and preferences. They also generate `artifacts/neon-preview.png`, `artifacts/neon-themes.png`, `artifacts/neon-menu.png` and `artifacts/neon-icon.png`. Synthetic samples are used only to exercise verification states, never during normal operation or in previews.
 
-La verifica desktop apre solo finestre di prova fuori schermo e controlla l'ordine nativo rispetto ad altre due finestre, la gestione dei click senza attivazione, il blocco delle richieste topmost, il richiamo dall'icona, lo spostamento e la minimizzazione. L'app si posiziona sopra il desktop di Explorer e sotto le applicazioni; se la shell non espone questo livello, usa il fondo dell'ordine delle finestre. Non modifica la gerarchia delle finestre di Explorer.
+Desktop checks create off-screen test windows and verify native ordering behind other windows, clicks without activation, blocked topmost requests, showing from the tray, moving and minimizing the widget. NEON positions itself above Explorer's desktop and below applications; if that shell layer is unavailable, it uses the bottom of the window order. It does not reparent Explorer windows.
 
-## Evoluzione proposta
+If NEON is running, build and test a separate executable to avoid the Windows executable lock:
 
-La base è un monitor discreto e leggibile, con attenzione al consumo di risorse. Per una versione successiva: integrazione diretta dei sensori senza provider esterno, scelta della GPU e filtro dei dischi, dimensione personalizzabile, soglie personalizzabili e avvio con Windows attivabile dalle preferenze. L'avvio automatico non viene configurato da questa versione.
+```powershell
+.\tests\verify.ps1 -ExecutableName NeonMonitor-check.exe
+```
+
+## Future work
+
+Potential additions include direct sensor integration without an external provider, GPU selection and drive filtering, adjustable dimensions and warning thresholds, and an optional launch-at-login setting. This version does not configure automatic startup.
