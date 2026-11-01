@@ -22,7 +22,8 @@ Il programma non richiede privilegi amministrativi. Un secondo avvio riapre il w
 
 - Letture di sistema circa ogni secondo e grafici degli ultimi 60 campioni. I campioni rimangono solo in memoria; nessuna cronologia è salvata su disco.
 - Spostamento trascinando la scritta `NEON / SYS`.
-- Pulsante `P` per rimanere sopra le altre finestre, `=` per il pannello compatto.
+- Il widget resta sul desktop, dietro alle altre applicazioni, e non prende il primo piano quando clicchi il pannello, richiami l'app o riduci a icona un'altra finestra. Rimane trascinabile e il menu è accessibile dal pannello o dall'icona nell'area di notifica.
+- Pulsante `=` per il pannello compatto. La modalità «Sempre in primo piano» è stata rimossa; le vecchie preferenze che la attivavano vengono ignorate.
 - La dimensione si adatta al monitor: anche la vista completa resta entro metà altezza desktop. I modelli di CPU e GPU si leggono passando il mouse sui rispettivi riquadri.
 - Menu `···` o tasto destro: menu scuro con simboli, spunte e sottomenu. In `Sfondo` scegli la trasparenza completa oppure il 35%, 60% o 85% di opacità. Testo e linee mantengono la loro leggibilità. Lo stesso menu è disponibile con il tasto destro sull'icona nell'area di notifica.
 - Nel menu `··· → Template colori` trovi **Matrix** (verde), **Ice** (azzurro), **Cyberpunk** (viola e ciano), **Amber** (arancio), **Crimson** (rosso) e **Ghost** (bianco). Cambiano testo, grafici, bordi e sfondi; le segnalazioni conservano un colore di attenzione. La scelta è salvata e viene ripristinata al prossimo avvio.
@@ -55,7 +56,9 @@ I contatori di rete sommano le interfacce attive: con VPN o adattatori virtuali 
 
 Il compilatore usato è quello di .NET Framework già presente in Windows. Il codice è C# con UI WPF; nessun pacchetto esterno da scaricare.
 
-Le verifiche coprono il calcolo CPU, le velocità di rete con intervalli effettivi, reset dei contatori, aggiunta/rimozione di adattatori e letture reali di tutte le unità fisse. La verifica UI controlla modalità compatta, pin, trasparenza, allarmi, sensori mancanti, unità multiple/non accessibili/rimosse e tutti i temi; genera anche `artifacts/neon-preview.png` e la galleria `artifacts/neon-themes.png` con dati reali. La verifica UI usa campioni sintetici solo per esercitare gli stati di errore, mai nella modalità normale o nelle anteprime.
+Le verifiche coprono il calcolo CPU, le velocità di rete con intervalli effettivi, reset dei contatori, aggiunta/rimozione di adattatori e letture reali di tutte le unità fisse. La verifica UI controlla modalità compatta, modalità desktop, trasparenza, allarmi, sensori mancanti, unità multiple/non accessibili/rimosse e tutti i temi; genera anche `artifacts/neon-preview.png` e la galleria `artifacts/neon-themes.png` con dati reali. La verifica UI usa campioni sintetici solo per esercitare gli stati di errore, mai nella modalità normale o nelle anteprime.
+
+La verifica desktop apre solo finestre di prova fuori schermo e controlla l'ordine nativo rispetto ad altre due finestre, la gestione dei click senza attivazione, il blocco delle richieste topmost, il richiamo dall'icona, lo spostamento e la minimizzazione. L'app si posiziona sopra il desktop di Explorer e sotto le applicazioni; se la shell non espone questo livello, usa il fondo dell'ordine delle finestre. Non modifica la gerarchia delle finestre di Explorer.
 
 ## Evoluzione proposta
 

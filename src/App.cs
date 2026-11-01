@@ -20,6 +20,11 @@ namespace Neon
             try
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
+                if (args.Length >= 2 && args[0] == "--desktop-test")
+                {
+                    var desktopApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                    File.WriteAllText(args[1], DesktopLayerTests.Run()); desktopApp.Shutdown(); return 0;
+                }
                 if (args.Length >= 2 && args[0] == "--snapshot") return SnapshotImage(args[1], args.Length >= 3 ? args[2] : null);
                 if (args.Length >= 2 && args[0] == "--gallery") return ThemeGallery(args[1]);
                 if (args.Length >= 2 && args[0] == "--menu-preview")
@@ -35,7 +40,7 @@ namespace Neon
                     testWindow.ShowActivated = false; testWindow.Left = -32000; testWindow.Top = -32000;
                     testWindow.Show(); testWindow.UpdateLayout();
                     testWindow.VerifyInterface(); testWindow.Close(); testApp.Shutdown();
-                    File.WriteAllText(args[1], "UI OK: metà altezza desktop, monitor piccolo senza tagli, compatta, pin, trasparenza, sensori mancanti, allarmi, unità multiple, unità inaccessibile/rimossa, sei temi e preferenze. Dimensioni finali: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
+                    File.WriteAllText(args[1], "UI OK: metà altezza desktop, monitor piccolo senza tagli, compatta, modalità desktop, trasparenza, sensori mancanti, allarmi, unità multiple, unità inaccessibile/rimossa, sei temi e preferenze. Dimensioni finali: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
                     return 0;
                 }
                 bool created;

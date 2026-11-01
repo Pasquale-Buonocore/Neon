@@ -14,6 +14,7 @@ $references = @(
     'WPF\WindowsBase.dll', 'WPF\PresentationCore.dll', 'WPF\PresentationFramework.dll'
 ) | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
 $sources = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object { $_.FullName }
+$sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter '*.cs' | ForEach-Object { $_.FullName }
 & (Join-Path $projectRoot 'assets\build-icon.ps1')
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /utf8output "/out:$output\$ExecutableName" "/win32manifest:$projectRoot\src\app.manifest" "/win32icon:$projectRoot\assets\neon.ico" "/resource:$projectRoot\assets\neon.ico,Neon.Icon" "/resource:$projectRoot\src\MenuStyles.xaml,Neon.MenuStyles" $references $sources
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione non riuscita.' }

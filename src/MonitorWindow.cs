@@ -22,7 +22,6 @@ namespace Neon
         public double Left { get; set; }
         public double Top { get; set; }
         public double Background { get; set; }
-        public bool Pinned { get; set; }
         public bool Compact { get; set; }
         public string Theme { get; set; }
         public Preferences() { Left = -99999; Top = -99999; Background = 0.60; Theme = "matrix"; }
@@ -84,6 +83,7 @@ namespace Neon
         private bool reading, shuttingDown;
         private Forms.NotifyIcon tray;
         private System.Drawing.Icon trayIcon;
+        private DesktopLayer desktopLayer;
         private Border shell;
         private Viewbox viewport;
         private StackPanel details;
@@ -93,7 +93,7 @@ namespace Neon
         private string diskLayout = "";
         private Sparkline downloadChart, uploadChart;
         private Metric cpu, ram, gpu, temperature;
-        private Button pinButton, compactButton;
+        private Button compactButton;
         public FrameworkElement Visual { get { return viewport; } }
         public Snapshot Latest { get; private set; }
 
@@ -107,7 +107,7 @@ namespace Neon
             WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent; ShowInTaskbar = false;
             FontFamily = new FontFamily("Segoe UI"); Foreground = White;
-            Topmost = preferences.Pinned; UseLayoutRounding = true;
+            Topmost = false; ShowActivated = false; UseLayoutRounding = true;
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Resources["Accent"] = Green; Resources["TextColor"] = White; Resources["MutedColor"] = Muted;
             Resources["LineColor"] = Line; Resources["SurfaceColor"] = Surface;
@@ -122,7 +122,9 @@ namespace Neon
               <ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter Property='Background' Value='{DynamicResource SurfaceColor}'/><Setter Property='Foreground' Value='{DynamicResource Accent}'/></Trigger></ControlTemplate.Triggers>
               </ControlTemplate></Setter.Value></Setter></Style>"));
             BuildInterface(); ApplyPreferences();
-            SourceInitialized += delegate { FitToDesktop(); };
+            SourceInitialized += delegate { FitToDesktop(); desktopLayer = new DesktopLayer(this); };
+            IsVisibleChanged += delegate { if (desktopLayer != null) desktopLayer.KeepBehind(); };
+            Closed += delegate { if (desktopLayer != null) desktopLayer.Dispose(); };
             if (!preview)
             {
                 SetupTray(); RestorePosition();
@@ -172,9 +174,8 @@ namespace Neon
             };
             header.Children.Add(brand);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            pinButton = ActionButton("P", "Sempre in primo piano", TogglePin);
             compactButton = ActionButton("=", "Modalità compatta", ToggleCompact);
-            actions.Children.Add(pinButton); actions.Children.Add(compactButton);
+            actions.Children.Add(compactButton);
             actions.Children.Add(ActionButton("···", "Impostazioni e trasparenza", OpenOptions));
             actions.Children.Add(ActionButton("−", "Nascondi nell'area di notifica", delegate { Hide(); }));
             actions.Children.Add(ActionButton("×", "Chiudi NEON", delegate { Close(); }));
@@ -260,7 +261,7 @@ namespace Neon
             }
             menu.Items.Add(opacityMenu);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
-            var pinned = Menu("Sempre in primo piano", TogglePin, preferences.Pinned, true); pinned.Tag = "pin"; pinned.Icon = MenuGlyph("M5,1H11 M6,1V6L3,10H13L10,6V1 M8,10V16"); menu.Items.Add(pinned);
+            var desktopItem = Menu("Sempre sul desktop", delegate { }, true); desktopItem.Tag = "desktop"; desktopItem.IsEnabled = false; desktopItem.Icon = MenuGlyph("M1,2H15V12H1Z M8,12V15 M4,15H12"); menu.Items.Add(desktopItem);
             var compact = Menu("Modalità compatta", ToggleCompact, preferences.Compact, true); compact.Tag = "compact"; compact.Icon = MenuGlyph("M1,2H15V7H1Z M1,10H15V15H1Z"); menu.Items.Add(compact);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
             var info = Menu("Informazioni sui sensori", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
@@ -315,7 +316,6 @@ namespace Neon
             grid.Children.Add(new Image { Source = App.RenderElement(main), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top });
             Place(grid, new Image { Source = App.RenderElement(themes), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top }, 0, 1); return grid;
         }
-        private void TogglePin() { preferences.Pinned = !preferences.Pinned; ApplyPreferences(); SavePreferences(); }
         private void ToggleCompact() { preferences.Compact = !preferences.Compact; ApplyPreferences(); SavePreferences(); }
         private void ApplyPreferences()
         {
@@ -336,9 +336,10 @@ namespace Neon
                 var gridColor = Line.Color; gridColor.A = 65; chart.GridColor = gridColor; chart.InvalidateVisual();
             }
             themeLabel.Text = palette.Id.ToUpperInvariant() + "  /  LIVE 1s";
-            Topmost = preferences.Pinned; details.Visibility = preferences.Compact ? Visibility.Collapsed : Visibility.Visible;
-            pinButton.Foreground = preferences.Pinned ? Green : Muted; compactButton.Foreground = preferences.Compact ? Green : Muted;
+            Topmost = false; details.Visibility = preferences.Compact ? Visibility.Collapsed : Visibility.Visible;
+            compactButton.Foreground = preferences.Compact ? Green : Muted;
             shell.ContextMenu = CreateOptions();
+            if (desktopLayer != null) desktopLayer.KeepBehind();
         }
         public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); }
         public void CompactPreview()
@@ -354,7 +355,7 @@ namespace Neon
             shell.Measure(new Size(PanelWidth, Double.PositiveInfinity)); double fullHeight = shell.DesiredSize.Height;
             ToggleCompact(); UpdateLayout(); shell.Measure(new Size(PanelWidth, Double.PositiveInfinity));
             if (shell.DesiredSize.Height >= fullHeight) throw new InvalidOperationException("Modalità compatta: altezza non ridotta.");
-            TogglePin(); if (Topmost != preferences.Pinned) throw new InvalidOperationException("Pin non applicato.");
+            if (Topmost || ShowActivated) throw new InvalidOperationException("Il widget può prendere il primo piano.");
             preferences.Background = 0; ApplyPreferences();
             if (((SolidColorBrush)shell.Background).Color.A != 0 || ((SolidColorBrush)cpu.Container.Background).Color.A != 0)
                 throw new InvalidOperationException("Trasparenza incompleta.");
@@ -404,9 +405,10 @@ namespace Neon
             ((MenuItem)opacityMenu.Items[2]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             if (Math.Abs(preferences.Background - 0.60) > 0.001) throw new InvalidOperationException("Selezione opacità dal menu non funzionante.");
             options = CreateOptions();
-            var pin = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "pin");
-            bool wasPinned = preferences.Pinned; pin.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            if (preferences.Pinned == wasPinned) throw new InvalidOperationException("Comando sempre in primo piano dal menu non funzionante.");
+            var desktopItem = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "desktop");
+            if (desktopItem.IsEnabled || !desktopItem.IsChecked || Topmost) throw new InvalidOperationException("Modalità desktop non applicata.");
+            var legacy = new JavaScriptSerializer().Deserialize<Preferences>("{\"Pinned\":true,\"Theme\":\"ice\"}");
+            if (legacy.Theme != "ice") throw new InvalidOperationException("Preferenze precedenti non compatibili.");
             SetTheme("matrix");
         }
         private void ShowSensorInfo()
@@ -417,6 +419,7 @@ namespace Neon
         private async Task Refresh()
         {
             if (reading || shuttingDown) return;
+            if (desktopLayer != null) desktopLayer.KeepBehind();
             reading = true;
             try { var sample = await Task.Run(() => telemetry.Read()); if (!shuttingDown) Update(sample); }
             catch (Exception ex) { footer.Text = "●  LETTURA NON DISPONIBILE"; footer.ToolTip = ex.Message; }
@@ -510,7 +513,12 @@ namespace Neon
             tray.MouseUp += delegate(object sender, Forms.MouseEventArgs e) { if (e.Button == Forms.MouseButtons.Right) Dispatcher.BeginInvoke(new Action(OpenOptions)); };
             tray.DoubleClick += delegate { Dispatcher.BeginInvoke(new Action(Reveal)); };
         }
-        public void Reveal() { Show(); Activate(); }
+        public void Reveal()
+        {
+            ShowActivated = false;
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Show(); if (desktopLayer != null) desktopLayer.KeepBehind();
+        }
         private Preferences ReadPreferences()
         {
             try
