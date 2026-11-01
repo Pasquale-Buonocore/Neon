@@ -22,6 +22,7 @@ Il programma non richiede privilegi amministrativi. Un secondo avvio riapre il w
 
 - Letture di sistema circa ogni secondo e grafici degli ultimi 60 campioni. I campioni rimangono solo in memoria; nessuna cronologia è salvata su disco.
 - Spostamento trascinando la scritta `NEON / SYS`.
+- Per impostazione predefinita il bordo del pannello coincide con l'angolo in alto a destra dell'area desktop disponibile. La modalità compatta mantiene la larghezza, la scala e l'aggancio all'angolo. Se trascini il widget altrove, la posizione viene salvata; avvicinandolo nuovamente all'angolo si riattiva l'aggancio.
 - Il widget resta sul desktop, dietro alle altre applicazioni, e non prende il primo piano quando clicchi il pannello, richiami l'app o riduci a icona un'altra finestra. Rimane trascinabile e il menu è accessibile dal pannello o dall'icona nell'area di notifica.
 - Pulsante `=` per il pannello compatto. La modalità «Sempre in primo piano» è stata rimossa; le vecchie preferenze che la attivavano vengono ignorate.
 - La dimensione si adatta al monitor: anche la vista completa resta entro metà altezza desktop. I modelli di CPU e GPU si leggono passando il mouse sui rispettivi riquadri.

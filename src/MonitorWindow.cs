@@ -24,7 +24,8 @@ namespace Neon
         public double Background { get; set; }
         public bool Compact { get; set; }
         public string Theme { get; set; }
-        public Preferences() { Left = -99999; Top = -99999; Background = 0.60; Theme = "matrix"; }
+        public bool DockToCorner { get; set; }
+        public Preferences() { Left = -99999; Top = -99999; Background = 0.60; Theme = "matrix"; DockToCorner = true; }
     }
 
     public sealed class Sparkline : FrameworkElement
@@ -80,7 +81,7 @@ namespace Neon
         private readonly Preferences preferences;
         private readonly string settingsPath;
         private readonly bool preview;
-        private bool reading, shuttingDown;
+        private bool reading, shuttingDown, positioning, positionQueued, dragging;
         private Forms.NotifyIcon tray;
         private System.Drawing.Icon trayIcon;
         private DesktopLayer desktopLayer;
@@ -127,12 +128,14 @@ namespace Neon
             Closed += delegate { if (desktopLayer != null) desktopLayer.Dispose(); };
             if (!preview)
             {
-                SetupTray(); RestorePosition();
+                SetupTray();
+                Left = SystemParameters.WorkArea.Right - PanelWidth; Top = SystemParameters.WorkArea.Top;
                 Loaded += async delegate { FitToDesktop(); UpdateLayout(); RestorePosition(); await Refresh(); timer.Start(); };
                 timer.Interval = TimeSpan.FromSeconds(1);
                 timer.Tick += async delegate { await Refresh(); };
                 Closing += delegate { shuttingDown = true; timer.Stop(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
-                LocationChanged += delegate { if (IsLoaded) { FitToDesktop(); preferences.Left = Left; preferences.Top = Top; } };
+                LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } } };
+                SizeChanged += delegate { QueuePosition(); };
             }
         }
 
@@ -158,7 +161,7 @@ namespace Neon
 
         private void BuildInterface()
         {
-            shell = new Border { Width = PanelWidth, Margin = new Thickness(6), Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(12), BorderBrush = Line, BorderThickness = new Thickness(1) };
+            shell = new Border { Width = PanelWidth, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(12), BorderBrush = Line, BorderThickness = new Thickness(1) };
             viewport = new Viewbox { Child = shell, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxHeight = SystemParameters.WorkArea.Height / 2 };
             Content = viewport;
             var body = new StackPanel(); shell.Child = body;
@@ -170,7 +173,13 @@ namespace Neon
             brand.ToolTip = "Trascina da qui per spostare il widget. Tasto destro per le opzioni.";
             header.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) {
                 if (e.OriginalSource is TextBlock || e.OriginalSource == header)
-                    try { DragMove(); SavePreferences(); } catch (InvalidOperationException) { }
+                    try {
+                        dragging = true; DragMove();
+                        var area = CurrentWorkArea();
+                        preferences.DockToCorner = Math.Abs(Left + ActualWidth - area.Right) <= 10 && Math.Abs(Top - area.Top) <= 10;
+                        RestorePosition(); SavePreferences();
+                    } catch (InvalidOperationException) { }
+                    finally { dragging = false; }
             };
             header.Children.Add(brand);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
@@ -316,7 +325,12 @@ namespace Neon
             grid.Children.Add(new Image { Source = App.RenderElement(main), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top });
             Place(grid, new Image { Source = App.RenderElement(themes), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top }, 0, 1); return grid;
         }
-        private void ToggleCompact() { preferences.Compact = !preferences.Compact; ApplyPreferences(); SavePreferences(); }
+        private void ToggleCompact()
+        {
+            preferences.Compact = !preferences.Compact; ApplyPreferences();
+            if (!preview && IsLoaded) { UpdateLayout(); RestorePosition(); }
+            SavePreferences();
+        }
         private void ApplyPreferences()
         {
             var palette = ThemePalette.Find(preferences.Theme); preferences.Theme = palette.Id;
@@ -337,6 +351,7 @@ namespace Neon
             }
             themeLabel.Text = palette.Id.ToUpperInvariant() + "  /  LIVE 1s";
             Topmost = false; details.Visibility = preferences.Compact ? Visibility.Collapsed : Visibility.Visible;
+            UpdateViewportWidth();
             compactButton.Foreground = preferences.Compact ? Green : Muted;
             shell.ContextMenu = CreateOptions();
             if (desktopLayer != null) desktopLayer.KeepBehind();
@@ -353,8 +368,29 @@ namespace Neon
             preferences.Compact = false; ApplyPreferences();
             UpdateLayout();
             shell.Measure(new Size(PanelWidth, Double.PositiveInfinity)); double fullHeight = shell.DesiredSize.Height;
+            double fullWidth = ActualWidth;
             ToggleCompact(); UpdateLayout(); shell.Measure(new Size(PanelWidth, Double.PositiveInfinity));
             if (shell.DesiredSize.Height >= fullHeight) throw new InvalidOperationException("Modalità compatta: altezza non ridotta.");
+            if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("La modalità compatta cambia larghezza.");
+            var area = new Rect(0, 0, 1536, 816);
+            var corner = PositionInArea(area, new Size(300, 408), true, new Point(250, 16));
+            if (corner.X != 1236 || corner.Y != 0) throw new InvalidOperationException("Angolo predefinito non esatto.");
+            var secondary = PositionInArea(new Rect(-1920, -100, 1920, 1080), new Size(350, 400), true, new Point(0, 0));
+            if (secondary.X != -350 || secondary.Y != -100) throw new InvalidOperationException("Angolo su monitor secondario errato.");
+            var clamped = PositionInArea(area, new Size(350, 400), false, new Point(1450, 700));
+            if (clamped.X != 1186 || clamped.Y != 416) throw new InvalidOperationException("Pannello non contenuto nello schermo.");
+            double testLeft = Left, testTop = Top;
+            preferences.DockToCorner = true;
+            for (int transition = 0; transition < 3; transition++)
+            {
+                UpdateLayout(); RestorePosition();
+                var workArea = CurrentWorkArea();
+                if (Math.Abs(Left + ActualWidth - workArea.Right) > 1 || Math.Abs(Top - workArea.Top) > 1)
+                    throw new InvalidOperationException("Il cambio di modalità perde l'angolo destro.");
+                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Scala instabile nel cambio di modalità.");
+                ToggleCompact();
+            }
+            Left = testLeft; Top = testTop;
             if (Topmost || ShowActivated) throw new InvalidOperationException("Il widget può prendere il primo piano.");
             preferences.Background = 0; ApplyPreferences();
             if (((SolidColorBrush)shell.Background).Color.A != 0 || ((SolidColorBrush)cpu.Container.Background).Color.A != 0)
@@ -442,7 +478,9 @@ namespace Neon
             download.Text = Speed(s.Download); upload.Text = Speed(s.Upload);
             networkPeak = Math.Max(1024, Math.Max(Math.Max(s.Download, s.Upload), networkPeak * 0.98));
             downloadChart.Scale = uploadChart.Scale = networkPeak; downloadChart.Push(s.Download); uploadChart.Push(s.Upload);
+            string previousDiskLayout = diskLayout;
             UpdateDisks(s.Disks);
+            if (previousDiskLayout != diskLayout) UpdateViewportWidth();
             memoryDetail.Text = s.CoreAvailable ? "COMMIT  " + GiB(s.CommitUsed) + " / " + GiB(s.CommitTotal) + " GiB" : "COMMIT  N/D";
             memoryDetail.ToolTip = "Memoria impegnata dal sistema / limite di commit (RAM + file di paging).";
             uptime.Text = "UPTIME  " + (int)s.Uptime.TotalDays + "g " + s.Uptime.Hours.ToString("00") + "h " + s.Uptime.Minutes.ToString("00") + "m";
@@ -542,32 +580,72 @@ namespace Neon
         }
         private void RestorePosition()
         {
-            var area = SystemParameters.WorkArea;
-            viewport.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
-            double width = ActualWidth > 0 ? ActualWidth : viewport.DesiredSize.Width;
-            double height = ActualHeight > 0 ? ActualHeight : viewport.DesiredSize.Height;
-            double savedLeft = preferences.Left, savedTop = preferences.Top;
-            bool reachable = false;
+            if (positioning || shuttingDown) return;
+            positioning = true;
+            try {
+                var area = SystemParameters.WorkArea;
+                UpdateLayout();
+                double width = ActualWidth > 0 ? ActualWidth : viewport.DesiredSize.Width;
+                double height = ActualHeight > 0 ? ActualHeight : viewport.DesiredSize.Height;
+                double savedLeft = preferences.Left, savedTop = preferences.Top;
+                bool reachable = false;
+                var source = PresentationSource.FromVisual(this);
+                double dpi = source == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
+                foreach (var screen in Forms.Screen.AllScreens)
+                {
+                    var bounds = screen.WorkingArea;
+                    var screenArea = new Rect(bounds.Left / dpi, bounds.Top / dpi, bounds.Width / dpi, bounds.Height / dpi);
+                    if (screenArea.Contains(new Point(savedLeft + 20, savedTop + 10))) { reachable = true; area = screenArea; break; }
+                }
+                var point = PositionInArea(area, new Size(width, height), preferences.DockToCorner || !reachable, new Point(savedLeft, savedTop));
+                Left = point.X; Top = point.Y;
+                FitToDesktop(); UpdateLayout();
+                point = PositionInArea(area, new Size(ActualWidth, ActualHeight), preferences.DockToCorner || !reachable, new Point(savedLeft, savedTop));
+                Left = point.X; Top = point.Y;
+                preferences.Left = Left; preferences.Top = Top;
+            } finally { positioning = false; }
+        }
+        internal static Point PositionInArea(Rect area, Size panel, bool docked, Point saved)
+        {
+            double left = docked ? area.Right - panel.Width : saved.X;
+            double top = docked ? area.Top : saved.Y;
+            return new Point(Math.Max(area.Left, Math.Min(left, area.Right - panel.Width)), Math.Max(area.Top, Math.Min(top, area.Bottom - panel.Height)));
+        }
+        private Rect CurrentWorkArea()
+        {
             var source = PresentationSource.FromVisual(this);
-            double dpi = source == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
-            foreach (var screen in Forms.Screen.AllScreens)
-            {
-                var bounds = screen.WorkingArea;
-                var screenArea = new Rect(bounds.Left / dpi, bounds.Top / dpi, bounds.Width / dpi, bounds.Height / dpi);
-                if (screenArea.Contains(new Point(savedLeft + width / 2, savedTop + 20))) { reachable = true; area = screenArea; break; }
-            }
-            double left = reachable ? savedLeft : area.Right - width - 16;
-            double top = reachable ? savedTop : area.Top + 16;
-            Left = Math.Max(area.Left, Math.Min(left, area.Right - width));
-            Top = Math.Max(area.Top, Math.Min(top, area.Bottom - height));
+            if (source == null) return SystemParameters.WorkArea;
+            var screen = Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
+            var transform = source.CompositionTarget.TransformFromDevice;
+            return new Rect(screen.WorkingArea.Left * transform.M11, screen.WorkingArea.Top * transform.M22, screen.WorkingArea.Width * transform.M11, screen.WorkingArea.Height * transform.M22);
+        }
+        private void QueuePosition()
+        {
+            if (preview || !IsLoaded || positionQueued || positioning || dragging || shuttingDown) return;
+            positionQueued = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(delegate {
+                positionQueued = false;
+                if (!shuttingDown && !dragging) RestorePosition();
+            }));
+        }
+        private void UpdateViewportWidth()
+        {
+            var visibility = details.Visibility;
+            details.Visibility = Visibility.Visible;
+            ((FrameworkElement)shell.Child).InvalidateMeasure(); shell.InvalidateMeasure();
+            shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+            double fullHeight = shell.DesiredSize.Height;
+            details.Visibility = visibility;
+            viewport.MaxWidth = PanelWidth * Math.Min(1, viewport.MaxHeight / Math.Max(1, fullHeight));
         }
         private void FitToDesktop()
         {
             var source = PresentationSource.FromVisual(this);
-            if (source == null) { viewport.MaxHeight = SystemParameters.WorkArea.Height / 2; return; }
+            if (source == null) return;
             var screen = Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
             // Screen bounds are physical pixels; WPF layout uses device-independent units.
-            viewport.MaxHeight = screen.WorkingArea.Height * source.CompositionTarget.TransformFromDevice.M22 / 2;
+            double limit = screen.WorkingArea.Height * source.CompositionTarget.TransformFromDevice.M22 / 2;
+            if (Math.Abs(viewport.MaxHeight - limit) > 0.1) { viewport.MaxHeight = limit; UpdateViewportWidth(); }
         }
     }
 }
