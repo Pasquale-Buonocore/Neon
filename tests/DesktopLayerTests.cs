@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -42,6 +42,7 @@ namespace Neon
         public static string Run()
         {
             var first = OtherWindow(); var second = OtherWindow(); var monitor = new MonitorWindow(true);
+            var settings = new SettingsWindow(new Preferences(), delegate { return true; });
             try
             {
                 first.Show(); second.Show();
@@ -65,9 +66,23 @@ namespace Neon
                 Assert(Above(firstHandle, hwnd), "moving without raising the widget");
                 monitor.WindowState = WindowState.Minimized; Pump(monitor);
                 Assert(monitor.WindowState == WindowState.Normal && Above(firstHandle, hwnd), "restoring to the desktop layer after minimization");
-                return "Desktop OK: Win32 styles, placement behind two windows, clicks without activation, blocked topmost requests, minimizing another app, showing, moving and restoring the widget.";
+                settings.Left = settings.Top = -32000; settings.Show(); Pump(settings);
+                IntPtr panel = new WindowInteropHelper(settings).Handle;
+                long panelStyles = GetWindowLongPtr(panel, -20).ToInt64();
+                Assert(!settings.ShowActivated && !settings.ShowInTaskbar && !settings.Topmost, "personalization managed window flags");
+                Assert((panelStyles & 0x08000000) != 0 && (panelStyles & 0x80) != 0 && (panelStyles & (0x40000 | 8)) == 0, "personalization tool window with no taskbar entry or activation");
+                Assert(Above(firstHandle, panel) && Above(firstHandle, hwnd), "both NEON windows stay below other applications");
+                Assert(SendMessage(panel, 0x0021, IntPtr.Zero, IntPtr.Zero) == new IntPtr(3), "personalization mouse clicks do not activate it");
+                Assert(SetWindowPos(panel, new IntPtr(-1), 0, 0, 0, 0, 1 | 2 | 0x10), "simulated personalization foreground request");
+                Pump(settings);
+                Assert((GetWindowLongPtr(panel, -20).ToInt64() & 8) == 0 && Above(firstHandle, panel), "personalization cannot become topmost");
+                second.WindowState = WindowState.Normal; Pump(settings);
+                Assert(Above(firstHandle, panel) && Above(secondHandle, panel) && GetForegroundWindow() != panel, "switching apps leaves personalization in the desktop band");
+                settings.Hide(); settings.Show(); settings.KeepOnDesktop(); Pump(settings);
+                Assert(Above(firstHandle, panel) && GetForegroundWindow() != panel, "reopening personalization cannot steal the foreground");
+                return "Desktop OK: personalization taskbar visibility, desktop placement, no activation and blocked topmost requests; widget checks: Win32 styles, placement behind two windows, clicks without activation, blocked topmost requests, minimizing another app, showing, moving and restoring the widget.";
             }
-            finally { monitor.Close(); second.Close(); first.Close(); }
+            finally { settings.Close(); monitor.Close(); second.Close(); first.Close(); }
         }
     }
 }

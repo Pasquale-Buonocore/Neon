@@ -22,6 +22,17 @@ namespace Neon
             try
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
+                if (args.Length >= 2 && args[0] == "--settings-test")
+                {
+                    var settingsApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                    File.WriteAllText(args[1], SettingsTests.Run(args[1])); settingsApp.Shutdown(); return 0;
+                }
+                if (args.Length >= 2 && args[0] == "--settings-preview")
+                {
+                    var settingsApp = new Application(); var settings = new SettingsWindow(new Preferences(), delegate { return true; });
+                    settings.Visual.Width = settings.Width; settings.Visual.Height = settings.Height;
+                    SaveBitmap(RenderElement(settings.Visual), args[1]); settings.Close(); settingsApp.Shutdown(); return 0;
+                }
                 if (args.Length >= 2 && args[0] == "--desktop-test")
                 {
                     var desktopApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

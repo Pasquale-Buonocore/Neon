@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -17,17 +17,6 @@ using Forms = System.Windows.Forms;
 
 namespace Neon
 {
-    public sealed class Preferences
-    {
-        public double Left { get; set; }
-        public double Top { get; set; }
-        public double Background { get; set; }
-        public bool Compact { get; set; }
-        public string Theme { get; set; }
-        public bool DockToCorner { get; set; }
-        public Preferences() { Left = -99999; Top = -99999; Background = 0.60; Theme = "matrix"; DockToCorner = true; }
-    }
-
     public sealed class Sparkline : FrameworkElement
     {
         private readonly List<double?> values = new List<double?>();
@@ -76,6 +65,7 @@ namespace Neon
         private readonly SolidColorBrush Green = Brush("#70FFA7"), White = Brush("#E3FFED"), Muted = Brush("#8AB49C"), Amber = Brush("#FFC66D"), Cyan = Brush("#73DDEB");
         private readonly SolidColorBrush Line = Brush("#41634E"), Surface = Brush("#050E0A");
         private readonly List<Border> panels = new List<Border>();
+        private readonly Dictionary<TextBlock, double> fontSizes = new Dictionary<TextBlock, double>();
         private readonly Telemetry telemetry = new Telemetry();
         private readonly DispatcherTimer timer = new DispatcherTimer();
         private readonly Preferences preferences;
@@ -85,11 +75,14 @@ namespace Neon
         private Forms.NotifyIcon tray;
         private System.Drawing.Icon trayIcon;
         private DesktopLayer desktopLayer;
+        private SettingsWindow settingsWindow;
+        private double workAreaHeight = SystemParameters.WorkArea.Height, workAreaWidth = SystemParameters.WorkArea.Width;
         private Border shell;
         private Viewbox viewport;
         private StackPanel details;
         private TextBlock cpuModel, gpuModel, status, time, footer, download, upload, uptime, memoryDetail, themeLabel;
         private StackPanel diskList;
+        private TextBlock emptyDiskNotice;
         private readonly Dictionary<string, DiskRow> diskRows = new Dictionary<string, DiskRow>();
         private string diskLayout = "";
         private Sparkline downloadChart, uploadChart;
@@ -112,28 +105,22 @@ namespace Neon
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Resources["Accent"] = Green; Resources["TextColor"] = White; Resources["MutedColor"] = Muted;
             Resources["LineColor"] = Line; Resources["SurfaceColor"] = Surface;
-            Resources.Add(typeof(Button), XamlReader.Parse(@"<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>
-              <Setter Property='Foreground' Value='{DynamicResource MutedColor}'/><Setter Property='Background' Value='Transparent'/>
-              <Setter Property='BorderBrush' Value='{DynamicResource LineColor}'/><Setter Property='BorderThickness' Value='1'/>
-              <Setter Property='FontFamily' Value='Consolas'/><Setter Property='FontSize' Value='10'/>
-              <Setter Property='Cursor' Value='Hand'/><Setter Property='Padding' Value='5,3'/>
-              <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
-              <Border x:Name='chrome' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='4' Padding='{TemplateBinding Padding}'>
-              <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border>
-              <ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter Property='Background' Value='{DynamicResource SurfaceColor}'/><Setter Property='Foreground' Value='{DynamicResource Accent}'/></Trigger></ControlTemplate.Triggers>
-              </ControlTemplate></Setter.Value></Setter></Style>"));
+            Resources.MergedDictionaries.Add(ControlStyles.Load());
+            Resources[typeof(Button)] = Resources["NeonIconButton"];
+            Resources["ControlText"] = White; Resources["ControlSurface"] = Brushes.Transparent;
+            Resources["ControlLine"] = Line; Resources["ControlAccent"] = Green;
             BuildInterface(); ApplyPreferences();
             SourceInitialized += delegate { FitToDesktop(); desktopLayer = new DesktopLayer(this); };
             IsVisibleChanged += delegate { if (desktopLayer != null) desktopLayer.KeepBehind(); };
-            Closed += delegate { if (desktopLayer != null) desktopLayer.Dispose(); };
+            Closed += delegate { if (settingsWindow != null) settingsWindow.Close(); if (desktopLayer != null) desktopLayer.Dispose(); };
             if (!preview)
             {
                 SetupTray();
                 Left = SystemParameters.WorkArea.Right - PanelWidth; Top = SystemParameters.WorkArea.Top;
                 Loaded += async delegate { FitToDesktop(); UpdateLayout(); RestorePosition(); await Refresh(); timer.Start(); };
-                timer.Interval = TimeSpan.FromSeconds(1);
+                timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
                 timer.Tick += async delegate { await Refresh(); };
-                Closing += delegate { shuttingDown = true; timer.Stop(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
+                Closing += delegate { shuttingDown = true; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
                 LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } } };
                 SizeChanged += delegate { QueuePosition(); };
             }
@@ -148,9 +135,10 @@ namespace Neon
         {
             BindingOperations.SetBinding(brush, SolidColorBrush.ColorProperty, new Binding { Source = (Color)ColorConverter.ConvertFromString(color) });
         }
-        private static TextBlock Text(string value, double size, Brush color, bool mono)
+        private TextBlock Text(string value, double size, Brush color, bool mono)
         {
-            return new TextBlock { Text = value, FontSize = size, Foreground = color, FontFamily = new FontFamily(mono ? "Consolas" : "Segoe UI"), TextTrimming = TextTrimming.CharacterEllipsis };
+            var text = new TextBlock { Text = value, FontSize = size * preferences.FontScale, Foreground = color, FontFamily = new FontFamily(mono ? "Consolas" : "Segoe UI"), TextTrimming = TextTrimming.CharacterEllipsis };
+            fontSizes[text] = size; return text;
         }
         private static void Place(Grid grid, UIElement child, int row, int column) { Grid.SetRow(child, row); Grid.SetColumn(child, column); grid.Children.Add(child); }
         private Button ActionButton(string text, string tip, Action action)
@@ -162,7 +150,7 @@ namespace Neon
         private void BuildInterface()
         {
             shell = new Border { Width = PanelWidth, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(12), BorderBrush = Line, BorderThickness = new Thickness(1) };
-            viewport = new Viewbox { Child = shell, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxHeight = SystemParameters.WorkArea.Height / 2 };
+            viewport = new Viewbox { Child = shell, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.Both, MaxHeight = SystemParameters.WorkArea.Height / 2 };
             Content = viewport;
             var body = new StackPanel(); shell.Child = body;
             var headerPanel = CreatePanel(new Thickness(0)); headerPanel.Margin = new Thickness(0, 0, 0, 8);
@@ -170,7 +158,7 @@ namespace Neon
             var header = new Grid { Margin = new Thickness(0, 0, 0, 5) };
             header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var brand = Text("●  NEON / SYS", 10, Green, true); brand.VerticalAlignment = VerticalAlignment.Center;
-            brand.ToolTip = "Drag here to move the widget. Right-click for settings.";
+            brand.ToolTip = "Drag here to move the widget. Right-click to personalize.";
             header.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) {
                 if (e.OriginalSource is TextBlock || e.OriginalSource == header)
                     try {
@@ -185,7 +173,7 @@ namespace Neon
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
             compactButton = ActionButton("=", "Compact mode", ToggleCompact);
             actions.Children.Add(compactButton);
-            actions.Children.Add(ActionButton("···", "Settings and transparency", OpenOptions));
+            actions.Children.Add(ActionButton("⚙", "Open personalization menu", OpenOptions));
             actions.Children.Add(ActionButton("−", "Hide to notification area", delegate { Hide(); }));
             actions.Children.Add(ActionButton("×", "Close NEON", delegate { Close(); }));
             Place(header, actions, 0, 1); headerBody.Children.Add(header);
@@ -254,7 +242,8 @@ namespace Neon
         private ContextMenu CreateOptions()
         {
             var menu = CreateMenuChrome();
-            menu.Items.Add(new MenuItem { Header = "NEON / SETTINGS", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
+            menu.Items.Add(new MenuItem { Header = "NEON / PERSONALIZE", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
+            var settings = Menu("Personalize…", OpenSettings, false); settings.Tag = "settings"; settings.Icon = MenuGlyph("M2,3H14 M2,8H14 M2,13H14 M5,1V5 M11,6V10 M6,11V15"); menu.Items.Add(settings);
             var templates = new MenuItem { Header = "Color themes", Tag = "themes", Icon = MenuGlyph("M1,1H6V6H1Z M10,1H15V6H10Z M1,10H6V15H1Z M10,10H15V15H10Z") };
             foreach (var palette in ThemePalette.All)
                 templates.Items.Add(ThemeMenuItem(palette));
@@ -264,7 +253,7 @@ namespace Neon
             {
                 double choice = opacity;
                 string label = opacity == 0 ? "Transparent" : (opacity * 100).ToString("0") + "% opacity";
-                var item = Menu(label, delegate { preferences.Background = choice; ApplyPreferences(); SavePreferences(); }, Math.Abs(preferences.Background - choice) < 0.01, true);
+                var item = Menu(label, delegate { preferences.Background = choice; ApplyPreferences(); SavePreferences(); if (settingsWindow != null) settingsWindow.SyncSavedPreferences(preferences); }, Math.Abs(preferences.Background - choice) < 0.01, true);
                 item.Icon = new Border { Width = 12, Height = 12, CornerRadius = new CornerRadius(3), BorderBrush = Muted, BorderThickness = new Thickness(1), Background = Green, Opacity = Math.Max(0.15, choice) };
                 opacityMenu.Items.Add(item);
             }
@@ -349,14 +338,45 @@ namespace Neon
                 chart.Color = chart == ram.Chart || chart == uploadChart ? Cyan.Color : chart == temperature.Chart ? Amber.Color : Green.Color;
                 var gridColor = Line.Color; gridColor.A = 65; chart.GridColor = gridColor; chart.InvalidateVisual();
             }
-            themeLabel.Text = palette.Id.ToUpperInvariant() + "  /  LIVE 1s";
+            themeLabel.Text = palette.Id.ToUpperInvariant() + "  /  LIVE " + preferences.RefreshSeconds.ToString("0.#") + "s";
+            timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
             Topmost = false; details.Visibility = preferences.Compact ? Visibility.Collapsed : Visibility.Visible;
             UpdateViewportWidth();
             compactButton.Foreground = preferences.Compact ? Green : Muted;
             shell.ContextMenu = CreateOptions();
             if (desktopLayer != null) desktopLayer.KeepBehind();
         }
-        public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); }
+        public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); if (settingsWindow != null) settingsWindow.SyncSavedPreferences(preferences); }
+        private void OpenSettings()
+        {
+            if (!preview && !IsVisible) Reveal();
+            if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.KeepOnDesktop(); return; }
+            settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings);
+            var area = CurrentWorkArea();
+            settingsWindow.WindowStartupLocation = WindowStartupLocation.Manual;
+            settingsWindow.MinWidth = Math.Min(settingsWindow.MinWidth, area.Width);
+            settingsWindow.MinHeight = Math.Min(settingsWindow.MinHeight, Math.Max(200, area.Height - 24));
+            settingsWindow.MaxWidth = area.Width; settingsWindow.MaxHeight = Math.Max(200, area.Height - 24);
+            settingsWindow.Width = Math.Min(settingsWindow.Width, area.Width);
+            settingsWindow.Height = Math.Min(settingsWindow.Height, settingsWindow.MaxHeight);
+            PositionSettingsWindow();
+            if (preview) { settingsWindow.ShowActivated = false; settingsWindow.ShowInTaskbar = false; settingsWindow.Left = settingsWindow.Top = -32000; }
+            settingsWindow.Closed += delegate { settingsWindow = null; };
+            settingsWindow.Show();
+        }
+        internal bool ApplyUserSettings(Preferences value)
+        { return ApplyUserSettings(value, true); }
+        internal bool ApplyUserSettings(Preferences value, bool persist)
+        {
+            var normalized = value.Copy(); normalized.Normalize();
+            preferences.WidgetScale = normalized.WidgetScale; preferences.FontScale = normalized.FontScale;
+            preferences.RefreshSeconds = normalized.RefreshSeconds; preferences.Background = normalized.Background; preferences.Theme = normalized.Theme;
+            ApplyPreferences();
+            if (IsLoaded) { UpdateLayout(); RestorePosition(); }
+            return !persist || SavePreferences();
+        }
+        internal Preferences CurrentPreferences { get { return preferences.Copy(); } }
+        internal double RefreshInterval { get { return timer.Interval.TotalSeconds; } }
         public void CompactPreview()
         {
             if (!preview) throw new InvalidOperationException("Preview mode only.");
@@ -474,7 +494,7 @@ namespace Neon
             ram.Detail.Text = s.CoreAvailable ? GiB(s.RamUsed) + " / " + GiB(s.RamTotal) + " GiB" : "Reading unavailable"; ram.Chart.Push(s.CoreAvailable ? (double?)s.RamPercent : null);
             gpu.Value.Text = Percent(s.Gpu); gpu.Detail.Text = s.GpuMemoryUsed.HasValue && s.GpuMemoryTotal.HasValue ? "VRAM " + GiB(s.GpuMemoryUsed.Value) + "/" + GiB(s.GpuMemoryTotal.Value) + " GiB" : s.Gpu.HasValue ? "CORE USAGE" : "Sensor unavailable"; gpu.Chart.Push(s.Gpu);
             temperature.Value.Text = Temperature(s.CpuTemperature); temperature.Detail.Text = "GPU " + Temperature(s.GpuTemperature); temperature.Chart.Scale = 110; temperature.Chart.Push(s.CpuTemperature);
-            temperature.Container.ToolTip = "CPU: highest CPU sensor reading. GPU: highest GPU sensor reading. Updated every 5 seconds.\n" + s.SensorSource + "\n" + s.SensorNote + (s.FanRpm.HasValue ? "\nFastest fan: " + s.FanRpm.Value.ToString("0") + " RPM" : "");
+            temperature.Container.ToolTip = "CPU: highest CPU sensor reading. GPU: highest GPU sensor reading. Temperature providers are polled no more than once every 5 seconds.\n" + s.SensorSource + "\n" + s.SensorNote + (s.FanRpm.HasValue ? "\nFastest fan: " + s.FanRpm.Value.ToString("0") + " RPM" : "");
             download.Text = Speed(s.Download); upload.Text = Speed(s.Upload);
             networkPeak = Math.Max(1024, Math.Max(Math.Max(s.Download, s.Upload), networkPeak * 0.98));
             downloadChart.Scale = uploadChart.Scale = networkPeak; downloadChart.Push(s.Download); uploadChart.Push(s.Upload);
@@ -502,6 +522,8 @@ namespace Neon
             string layout = String.Join("|", disks.Select(d => d.Name));
             if (layout != diskLayout || diskList.Children.Count == 0)
             {
+                foreach (var oldRow in diskRows.Values) { fontSizes.Remove(oldRow.Label); fontSizes.Remove(oldRow.Detail); }
+                if (emptyDiskNotice != null) { fontSizes.Remove(emptyDiskNotice); emptyDiskNotice = null; }
                 diskLayout = layout; diskRows.Clear(); diskList.Children.Clear();
                 foreach (var disk in disks)
                 {
@@ -517,7 +539,7 @@ namespace Neon
                     row.Track.SizeChanged += delegate { SizeDiskBar(row); };
                     diskRows[disk.Name] = row;
                 }
-                if (disks.Count == 0) diskList.Children.Add(Text("No fixed drives available", 11, Muted, false));
+                if (disks.Count == 0) { emptyDiskNotice = Text("No fixed drives available", 11, Muted, false); diskList.Children.Add(emptyDiskNotice); }
             }
             foreach (var disk in disks)
             {
@@ -559,24 +581,13 @@ namespace Neon
         }
         private Preferences ReadPreferences()
         {
-            try
-            {
-                var p = new JavaScriptSerializer().Deserialize<Preferences>(File.ReadAllText(settingsPath));
-                if (p == null || Double.IsNaN(p.Background) || Double.IsInfinity(p.Background) || Double.IsNaN(p.Left) || Double.IsInfinity(p.Left) || Double.IsNaN(p.Top) || Double.IsInfinity(p.Top)) return new Preferences();
-                p.Background = Math.Max(0, Math.Min(0.95, p.Background)); return p;
-            }
-            catch { return new Preferences(); }
+            return PreferencesStore.Load(settingsPath);
         }
-        private void SavePreferences()
+        private bool SavePreferences()
         {
-            if (preview) return;
-            try
-            {
-                preferences.Left = Left; preferences.Top = Top;
-                Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
-                File.WriteAllText(settingsPath, new JavaScriptSerializer().Serialize(preferences));
-            }
-            catch { /* A read-only portable folder must not stop monitoring. */ }
+            if (preview) return true;
+            preferences.Left = Left; preferences.Top = Top;
+            return PreferencesStore.Save(settingsPath, preferences);
         }
         private void RestorePosition()
         {
@@ -604,6 +615,20 @@ namespace Neon
                 Left = point.X; Top = point.Y;
                 preferences.Left = Left; preferences.Top = Top;
             } finally { positioning = false; }
+            PositionSettingsWindow();
+        }
+        private void PositionSettingsWindow()
+        {
+            if (settingsWindow == null) return;
+            var area = CurrentWorkArea();
+            var point = SettingsPosition(area, new Rect(Left, Top, ActualWidth > 0 ? ActualWidth : PanelWidth, ActualHeight), new Size(settingsWindow.ActualWidth > 0 ? settingsWindow.ActualWidth : settingsWindow.Width, settingsWindow.ActualHeight > 0 ? settingsWindow.ActualHeight : settingsWindow.Height));
+            settingsWindow.Left = point.X; settingsWindow.Top = point.Y;
+        }
+        internal static Point SettingsPosition(Rect area, Rect widget, Size dialog)
+        {
+            double left = widget.Left - dialog.Width - 8;
+            if (left < area.Left && widget.Right + 8 + dialog.Width <= area.Right) left = widget.Right + 8;
+            return new Point(Math.Max(area.Left, Math.Min(left, area.Right - dialog.Width)), Math.Max(area.Top, Math.Min(widget.Top, area.Bottom - dialog.Height)));
         }
         internal static Point PositionInArea(Rect area, Size panel, bool docked, Point saved)
         {
@@ -632,11 +657,24 @@ namespace Neon
         {
             var visibility = details.Visibility;
             details.Visibility = Visibility.Visible;
-            ((FrameworkElement)shell.Child).InvalidateMeasure(); shell.InvalidateMeasure();
+            foreach (var item in fontSizes) item.Key.FontSize = item.Value;
+            InvalidateMeasurements(shell);
             shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             double fullHeight = shell.DesiredSize.Height;
+            foreach (var item in fontSizes) item.Key.FontSize = item.Value * preferences.FontScale;
+            InvalidateMeasurements(shell);
+            shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+            double currentFullHeight = shell.DesiredSize.Height;
             details.Visibility = visibility;
-            viewport.MaxWidth = PanelWidth * Math.Min(1, viewport.MaxHeight / Math.Max(1, fullHeight));
+            double heightLimit = Math.Min(workAreaHeight * 0.90, workAreaHeight / 2 * preferences.WidgetScale * Math.Max(1, preferences.FontScale));
+            double desiredWidth = PanelWidth * Math.Min(1, workAreaHeight / 2 / Math.Max(1, fullHeight)) * preferences.WidgetScale;
+            viewport.MaxWidth = Math.Min(Math.Min(workAreaWidth, desiredWidth), PanelWidth * heightLimit / Math.Max(1, currentFullHeight));
+            viewport.MaxHeight = heightLimit;
+        }
+        private static void InvalidateMeasurements(DependencyObject root)
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) InvalidateMeasurements(VisualTreeHelper.GetChild(root, i));
+            var element = root as FrameworkElement; if (element != null) element.InvalidateMeasure();
         }
         private void FitToDesktop()
         {
@@ -644,8 +682,9 @@ namespace Neon
             if (source == null) return;
             var screen = Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
             // Screen bounds are physical pixels; WPF layout uses device-independent units.
-            double limit = screen.WorkingArea.Height * source.CompositionTarget.TransformFromDevice.M22 / 2;
-            if (Math.Abs(viewport.MaxHeight - limit) > 0.1) { viewport.MaxHeight = limit; UpdateViewportWidth(); }
+            double height = screen.WorkingArea.Height * source.CompositionTarget.TransformFromDevice.M22;
+            double width = screen.WorkingArea.Width * source.CompositionTarget.TransformFromDevice.M11;
+            if (Math.Abs(workAreaHeight - height) > 0.1 || Math.Abs(workAreaWidth - width) > 0.1) { workAreaHeight = height; workAreaWidth = width; UpdateViewportWidth(); }
         }
     }
 }
