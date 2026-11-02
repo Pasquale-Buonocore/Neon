@@ -2,6 +2,12 @@
 
 A native desktop widget for 64-bit Windows 10/11, with a transparent background, a vertical panel with rounded corners, terminal typography and compact charts. By default the panel uses at most half the available desktop height and scales its width proportionally, accounting for Windows DPI scaling. Full mode shows CPU, RAM, GPU, temperatures, network traffic and local drives while you work or play.
 
+<p align="center">
+  <img src="assets/screenshots/neon-preview.png" alt="NEON desktop widget showing CPU, RAM, GPU, temperatures, network traffic and local drives" width="300" />
+  <img src="assets/screenshots/neon-settings.png" alt="Personalize panel with theme, widget size, text size, background opacity and refresh controls" width="300" />
+</p>
+
+*Full widget and Personalize panel. Backgrounds are transparent; readings depend on the available hardware and sensor providers.*
 ## Getting started
 
 Download or clone this repository into a writable folder, then double-click **Start.cmd**. The launcher builds the executable automatically on the first run. On subsequent runs it starts **bin/NeonMonitor.exe** directly. Python, Node and a separate SDK are not required. NEON uses .NET Framework 4.x and WPF, normally included with Windows 10/11.
@@ -65,6 +71,11 @@ Preferences are written atomically to `data/settings.json` when saved. Old setti
 
 The drive list shows volumes with drive letters, rather than physical devices: multiple partitions on one device may appear separately. Inaccessible volumes remain listed as N/A, while removed volumes disappear on the next refresh. Long lists can be scrolled. Removable media and network drives are excluded.
 
+## Color themes
+
+![Compact NEON widgets in Matrix, Ice, Cyberpunk, Amber, Crimson and Ghost themes](assets/screenshots/neon-themes.png)
+
+*Six built-in themes, shown in compact mode. Choose one from the gear menu or Personalize panel.*
 ## Temperatures and GPU sensors
 
 Windows does not expose a universal CPU temperature reading. **N/A** means a reading is unavailable, not that its value is zero.
