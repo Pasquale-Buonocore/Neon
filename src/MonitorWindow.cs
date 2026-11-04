@@ -350,8 +350,9 @@ namespace Neon
         private void OpenSettings()
         {
             if (!preview && !IsVisible) Reveal();
-            if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.KeepOnDesktop(); return; }
-            settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings);
+            if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.RefreshStartupState(); settingsWindow.KeepOnDesktop(); return; }
+            settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings,
+                preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration());
             var area = CurrentWorkArea();
             settingsWindow.WindowStartupLocation = WindowStartupLocation.Manual;
             settingsWindow.MinWidth = Math.Min(settingsWindow.MinWidth, area.Width);

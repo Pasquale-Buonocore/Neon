@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,6 +16,12 @@ namespace Neon
         private readonly Preferences draft;
         private Preferences saved;
         private readonly Func<Preferences, bool> save;
+        private readonly IStartupRegistration startup;
+        private CheckBox launchAtLogin;
+        private TextBlock startupStatus;
+        private Button windowsStartup;
+        private bool startupLoading, startupDirty;
+        private StartupSnapshot startupState;
         private bool loading, accepted;
         private readonly Dictionary<string, Button> themes = new Dictionary<string, Button>();
         private Slider widgetSize, fontSize, opacity, refresh;
@@ -26,10 +33,11 @@ namespace Neon
         private TextBlock Label(string text, double size, string color)
         { var label = new TextBlock { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap }; label.SetResourceReference(TextBlock.ForegroundProperty, color == "#70FFA7" ? "SettingsAccent" : color == "#E6F3EC" ? "SettingsText" : "SettingsMuted"); return label; }
 
-        public SettingsWindow(Preferences current, Func<Preferences, bool> applySettings, Func<Preferences, bool> saveSettings = null)
+        public SettingsWindow(Preferences current, Func<Preferences, bool> applySettings, Func<Preferences, bool> saveSettings = null, IStartupRegistration startupRegistration = null)
         {
+            startup = startupRegistration ?? new PreviewStartupRegistration();
             draft = current.Copy(); draft.Normalize(); saved = draft.Copy(); apply = applySettings; save = saveSettings ?? applySettings;
-            Title = "NEON // Personalize"; Icon = BrandIcon.Window(); Width = 320; Height = 390;
+            Title = "NEON // Personalize"; Icon = BrandIcon.Window(); Width = 320; Height = 470;
             MinWidth = 300; MinHeight = Math.Min(330, SystemParameters.WorkArea.Height - 24);
             MaxHeight = SystemParameters.WorkArea.Height - 24;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -56,14 +64,14 @@ namespace Neon
             close.Style = (Style)Resources["NeonIconButton"]; close.VerticalAlignment = VerticalAlignment.Top;
             DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
             var heading = new StackPanel(); heading.Children.Add(Label("NEON / PERSONALIZE", 9, "#70FFA7"));
-            var title = Label("Personalize", 20, "#E6F3EC"); title.FontFamily = new FontFamily("Consolas"); heading.Children.Add(title);
+            var title = Label("Personalize", 20, "#E6F3EC"); heading.Children.Add(title);
             header.Children.Add(heading);
             heading.MouseLeftButtonDown += delegate { if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); };
             DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
-            var footer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-            status = Label("Live preview · Save to keep changes.", 10, "#9FBAAB"); status.MinHeight = 27; footer.Children.Add(status);
+            var footer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+            status = Label("Live preview · Save to keep changes.", 10, "#9FBAAB"); status.MinHeight = 20; footer.Children.Add(status);
             var buttons = new Grid(); buttons.ColumnDefinitions.Add(new ColumnDefinition()); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var reset = Button("Reset", delegate { LoadValues(new Preferences()); PreviewDraft(); }); reset.Width = 60; reset.HorizontalAlignment = HorizontalAlignment.Left; buttons.Children.Add(reset);
+            var reset = Button("Reset", delegate { LoadValues(new Preferences()); launchAtLogin.IsChecked = false; PreviewDraft(); }); reset.Width = 60; reset.HorizontalAlignment = HorizontalAlignment.Left; buttons.Children.Add(reset);
             var applyButton = Button("Cancel", delegate { Close(); }); applyButton.Width = 60; Grid.SetColumn(applyButton, 1); applyButton.Margin = new Thickness(8, 0, 0, 0); buttons.Children.Add(applyButton);
             var done = Button("Save", delegate { ApplyDraft(true); }); done.Width = 60; done.IsDefault = true; done.SetResourceReference(Control.BackgroundProperty, "SettingsSelected"); Grid.SetColumn(done, 2); done.Margin = new Thickness(8, 0, 0, 0); buttons.Children.Add(done);
             footer.Children.Add(buttons); DockPanel.SetDock(footer, Dock.Bottom); layout.Children.Add(footer);
@@ -87,8 +95,40 @@ namespace Neon
             opacity = Setting(form, "Background opacity", "0% is transparent. Text and charts remain visible.", 0, 95, 5, "%");
             var monitorTitle = Label("MONITORING", 10, "#9FBAAB"); monitorTitle.Margin = new Thickness(0, 6, 0, 0); form.Children.Add(monitorTitle);
             refresh = Setting(form, "Refresh interval", "Temperature providers refresh at most once every 5 seconds.", 0.5, 10, 0.5, " s");
+            var startupTitle = Label("STARTUP", 10, "#9FBAAB"); startupTitle.Margin = new Thickness(0, 10, 0, 5); form.Children.Add(startupTitle);
+            launchAtLogin = new CheckBox { Content = "Launch at Windows login", Margin = new Thickness(0, 0, 0, 4) };
+            launchAtLogin.SetResourceReference(Control.ForegroundProperty, "SettingsText");
+            launchAtLogin.Checked += StartupSelectionChanged; launchAtLogin.Unchecked += StartupSelectionChanged;
+            form.Children.Add(launchAtLogin); form.Children.Add(Label("Changes apply when you save.", 10, "#9FBAAB"));
+            startupStatus = Label("", 10, "#9FBAAB"); startupStatus.Margin = new Thickness(0, 4, 0, 4); form.Children.Add(startupStatus);
+            windowsStartup = Button("Open Windows startup settings", delegate
+            {
+                try { Process.Start(new ProcessStartInfo("ms-settings:startupapps") { UseShellExecute = true }); }
+                catch (Exception ex) { ShowSaveStatus(false, "Windows startup settings could not be opened. " + ex.Message); }
+            });
+            windowsStartup.HorizontalAlignment = HorizontalAlignment.Left; form.Children.Add(windowsStartup);
             layout.Children.Add(new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 6, 0) });
-            LoadValues(draft); UpdateThemeButtons();
+            LoadValues(draft); UpdateThemeButtons(); RefreshStartupState();
+        }
+        private void StartupSelectionChanged(object sender, RoutedEventArgs e)
+        {
+            if (startupLoading) return;
+            startupDirty = startupState != null && (launchAtLogin.IsChecked == true) != startupState.Registered;
+            ShowSaveStatus(true, "Startup changes apply when you save.");
+        }
+        internal void RefreshStartupState()
+        {
+            startupState = startup.Read();
+            startupStatus.Text = startupState.Description;
+            startupStatus.ToolTip = startupState.ConfiguredCommand;
+            startupStatus.SetResourceReference(TextBlock.ForegroundProperty,
+                startupState.Error != null || startupState.Registered && (startupState.Approval != StartupApproval.Allowed || !startupState.MatchesExecutable) ? "SettingsWarning" : "SettingsMuted");
+            launchAtLogin.IsEnabled = startupState.Error == null;
+            if (!startupDirty)
+            {
+                startupLoading = true; launchAtLogin.IsChecked = startupState.Error == null ? (bool?)startupState.Registered : null; startupLoading = false;
+            }
+            windowsStartup.Visibility = startupState.Error != null || startupState.Registered && startupState.Approval != StartupApproval.Allowed ? Visibility.Visible : Visibility.Collapsed;
         }
         private static Button Button(string text, Action action)
         { var button = new Button { Content = text }; button.Click += delegate { action(); }; return button; }
@@ -122,11 +162,35 @@ namespace Neon
         {
             draft.WidgetScale = widgetSize.Value / 100; draft.FontScale = fontSize.Value / 100;
             draft.Background = opacity.Value / 100; draft.RefreshSeconds = refresh.Value;
-            draft.Normalize(); bool success = save(draft.Copy());
-            status.SetResourceReference(TextBlock.ForegroundProperty, success ? "SettingsAccent" : "SettingsWarning");
-            status.Text = success ? "Settings saved." : "Applied for this session. Check that the app folder is writable.";
+            draft.Normalize(); RefreshStartupState();
+            var previousStartup = startupState; bool changed = false, success = false;
+            try
+            {
+                if (previousStartup.Error != null) throw new InvalidOperationException(previousStartup.Error);
+                changed = startup.SetEnabled(launchAtLogin.IsChecked == true);
+                success = save(draft.Copy());
+                if (!success) throw new InvalidOperationException("Applied for this session. Check that the app folder is writable.");
+                startupDirty = false;
+                ShowSaveStatus(true, "Settings saved.");
+            }
+            catch (Exception ex)
+            {
+                success = false; string error = ex.Message;
+                if (changed)
+                {
+                    try { startup.Restore(previousStartup); }
+                    catch (Exception restoreError) { error += " The previous startup registration could not be restored. " + restoreError.Message; }
+                }
+                ShowSaveStatus(false, "Could not save settings. " + error);
+            }
+            RefreshStartupState();
             if (success) saved = draft.Copy();
             if (close && success) { accepted = true; Close(); }
+        }
+        private void ShowSaveStatus(bool success, string message)
+        {
+            status.SetResourceReference(TextBlock.ForegroundProperty, success ? "SettingsAccent" : "SettingsWarning");
+            status.Text = message;
         }
         private void PreviewDraft()
         {

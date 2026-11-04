@@ -4,7 +4,7 @@ A native desktop widget for 64-bit Windows 10/11, with a transparent background,
 
 <p align="center">
   <img src="assets/screenshots/neon-preview.png" alt="NEON desktop widget showing CPU, RAM, GPU, temperatures, network traffic and local drives" width="300" />
-  <img src="assets/screenshots/neon-settings.png" alt="Personalize panel with theme, widget size, text size, background opacity and refresh controls" width="300" />
+  <img src="assets/screenshots/neon-settings.png" alt="Personalize panel with theme, widget size, text size, background opacity, refresh and Windows startup controls" width="300" />
 </p>
 
 *Full widget and Personalize panel. Backgrounds are transparent; readings depend on the available hardware and sensor providers.*
@@ -28,6 +28,7 @@ Administrator privileges are not required. Launching a second instance shows the
 - **No widget visible:** check the notification-area overflow and double-click NEON's icon. Other application windows can cover NEON because it stays on the desktop.
 - **Missing temperature or GPU data:** open **Sensor information** and see the provider notes below. Unavailable readings are never replaced with estimated values.
 - **Changes cannot be saved:** keep the repository in a folder your user can write to. Preferences live in `data/settings.json`; the panel reports write failures.
+- **NEON does not launch at login:** open **Personalize → Startup** and check the registration and Windows approval status. If Windows has disabled it, use **Open Windows startup settings** to re-enable NEON. After moving the project folder, start the new copy, select **Launch at Windows login** and click **Save** to update the path.
 - **Build or startup failure:** confirm you are using 64-bit Windows 10/11 with .NET Framework 4.x. If present, inspect `bin/neon-error.log`. Close NEON before replacing its executable.
 ## Personalize
 
@@ -38,10 +39,17 @@ Select the gear button to open the widget menu, then **Personalize…**. The sam
 - **Color theme:** Matrix, Ice, Cyberpunk, Amber, Crimson or Ghost.
 - **Background opacity:** 0–95%; default 60%. Text and chart lines remain visible at 0%.
 - **Refresh interval:** 0.5–10 seconds; default one second. Temperature providers are queried no more than once every five seconds.
+- **Launch at Windows login:** off by default. Changes apply only with **Save**, without administrator privileges. Cancel, × and Esc discard the selection; Reset proposes off until saved.
 
 Sliders and color selections update the widget immediately as a live preview. The panel follows the widget during resizing, including while the slider is held; dragging uses screen coordinates so moving the panel cannot change the selected value. Both windows share button styles and icon dimensions. The settings window shares the widget's color theme and background opacity, including during live preview. Opacity changes affect the backgrounds; text, outlines and slider controls stay legible. **Save** persists the changes and closes the window. **Cancel**, × or Esc restores the previously saved values. **Reset** previews the standard values. Existing position, docking and compact-mode preferences are preserved.
 
 Preferences are written atomically to `data/settings.json` when saved. Old settings files retain their existing values and receive defaults for the new controls. Missing or malformed files fall back to defaults. If saving fails, the preview remains active and the settings window explains the failure; Cancel restores the last saved values.
+
+Startup registration belongs to the current Windows user and is read from Windows, independently of `settings.json`. The checkbox represents NEON's registration; the status below it separately reports a different executable path, a Windows startup block, or a state that cannot be verified. Reopening Personalize refreshes that status while preserving an unsaved selection. Windows approval formats that NEON does not recognize are reported as unverified. NEON never overrides Windows' startup block; re-enable it in Windows settings when needed.
+
+NEON uses the local Windows registry provider to read and write the current user's startup registration and verifies writes and removals through that provider. This avoids reporting a registration that is visible only in the launching process's registry view. If the provider is unavailable or denies access, the panel reports the failure and stays open instead of claiming that the startup change was saved.
+
+On Save, NEON registers the quoted absolute executable path directly, or removes only its own `NEON` startup value. If saving preferences fails, it attempts to restore the previous registration and reports any restoration failure with the actual startup state. Automatic startup uses the normal visible widget, saved position, docking, theme and full/compact mode, with the existing single-instance behavior. Moving the folder requires saving the registration again; paths are never repaired automatically. Startup commands longer than Windows' 260-character limit are rejected with an explanation.
 
 ## Features
 
@@ -101,6 +109,16 @@ Verification covers CPU calculations, network rates using actual intervals, coun
 
 Settings checks cover default values, legacy migration, corrupt files, atomic persistence, failed writes, live controls, independent font sizing, refresh intervals, extreme size/font combinations, compact-width stability, docking and the single-instance settings window. `artifacts/neon-settings.png` provides a rendered settings preview.
 
+Startup checks also cover provisional changes, Save/Cancel/×/Esc/Reset, external changes, Windows blocks, failed registration, failed preference saves and rollback failures. Registry tests use a unique temporary key under `HKCU\Software\NEON\Tests` and clean up their own subtree. All UI tests and previews use a simulated startup service; the normal suite never changes the real Windows startup registration or approval.
+
+Manual startup acceptance checks (Windows 10 and Windows 11, standard user):
+
+1. Use a project path containing spaces. Save a theme, position/docking preference and full/compact mode. Enable **Launch at Windows login**, click **Save**, then sign out and back in. Confirm exactly one visible widget restores the saved preferences and stays behind applications. Repeat for the other mode and for custom versus docked placement.
+2. Launch the executable again while NEON is running. Confirm it reveals the existing widget without creating another instance.
+3. Disable NEON in Windows **Startup apps** or Task Manager. Reopen Personalize and confirm **Disabled by Windows** and the Windows settings button appear. Save other settings and confirm the block remains; re-enable through Windows and reopen Personalize to refresh the status.
+4. Uncheck the option and Save. Confirm only NEON's registration disappears and no widget launches after the next sign-in.
+5. Move the project folder, start the moved copy, and confirm the different-path status. Save the selected startup option again; confirm the registered path points to the moved executable.
+
 Desktop checks create off-screen test windows and verify native ordering behind other windows, clicks without activation, blocked topmost requests, showing from the tray, moving and minimizing the widget. NEON positions itself above Explorer's desktop and below applications; if that shell layer is unavailable, it uses the bottom of the window order. It does not reparent Explorer windows.
 
 If NEON is running, build and test a separate executable to avoid the Windows executable lock:
@@ -111,4 +129,4 @@ If NEON is running, build and test a separate executable to avoid the Windows ex
 
 ## Future work
 
-Potential additions include direct sensor integration without an external provider, GPU selection and drive filtering, adjustable warning thresholds, and an optional launch-at-login setting. This version does not configure automatic startup.
+Potential additions include direct sensor integration without an external provider, GPU selection and drive filtering, and adjustable warning thresholds.

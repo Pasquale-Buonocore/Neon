@@ -59,7 +59,8 @@ namespace Neon
                 Assert(!PreferencesStore.Save(temporary, wanted), "unwritable destination reported without crashing");
                 Assert(Directory.GetFiles(temporary, "*.tmp").Length == 0, "temporary writes cleaned up");
                 VerifyLiveApplication();
-                return "Settings OK: defaults, legacy migration, corrupt/null settings, validation, atomic save/reload, save failure, live application, independent typography, interval, docking, compact mode, shared controls, personalization menu, immediate placement under mouse capture, and stable screen-coordinate slider dragging.";
+                StartupTests.Run();
+                return "Settings OK: defaults, legacy migration, corrupt/null settings, validation, atomic save/reload, save failure, live application, independent typography, interval, docking, compact mode, shared controls, personalization menu, immediate placement under mouse capture, stable screen-coordinate slider dragging, and Windows startup registration, approval, Save/Cancel/Reset and rollback.";
             }
             finally
             {
