@@ -9,7 +9,6 @@ namespace Neon
         public double Left { get; set; }
         public double Top { get; set; }
         public double Background { get; set; }
-        public bool Compact { get; set; }
         public string Theme { get; set; }
         public bool DockToCorner { get; set; }
         public double WidgetScale { get; set; }

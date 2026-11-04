@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') -ExecutableName $ExecutableName
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-foreach ($mode in @('self-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'menu-preview', 'icon-preview', 'settings-preview')) {
+foreach ($mode in @('self-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview')) {
     $filename = switch ($mode) {
         'self-test' { 'verification.json' }
         'ui-test' { 'ui-verification.txt' }
@@ -12,6 +12,7 @@ foreach ($mode in @('self-test', 'ui-test', 'desktop-test', 'settings-test', 'sn
         'settings-test' { 'settings-verification.txt' }
         'snapshot' { 'neon-preview.png' }
         'gallery' { 'neon-themes.png' }
+        'tab-gallery' { 'neon-tabs.png' }
         'menu-preview' { 'neon-menu.png' }
         'icon-preview' { 'neon-icon.png' }
         'settings-preview' { 'neon-settings.png' }

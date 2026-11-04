@@ -20,6 +20,7 @@ namespace Neon
     public sealed class Sparkline : FrameworkElement
     {
         private readonly List<double?> values = new List<double?>();
+        internal int SampleCount { get { return values.Count; } }
         public Color Color = Color.FromRgb(85, 255, 153);
         public Color GridColor = Color.FromArgb(30, 120, 220, 170);
         public double Scale = 100;
@@ -80,14 +81,18 @@ namespace Neon
         private Border shell;
         private Viewbox viewport;
         private StackPanel details;
-        private TextBlock cpuModel, gpuModel, status, time, footer, download, upload, uptime, memoryDetail, themeLabel;
+        private StackPanel monitorContent;
+        private FrameworkElement processesContent, storageContent;
+        private readonly List<Button> tabButtons = new List<Button>();
+        private int selectedTab;
+        private TextBlock cpuModel, gpuModel, status, download, upload;
+        private Border statusBox;
         private StackPanel diskList;
         private TextBlock emptyDiskNotice;
         private readonly Dictionary<string, DiskRow> diskRows = new Dictionary<string, DiskRow>();
         private string diskLayout = "";
         private Sparkline downloadChart, uploadChart;
         private Metric cpu, ram, gpu, temperature;
-        private Button compactButton;
         public FrameworkElement Visual { get { return viewport; } }
         public Snapshot Latest { get; private set; }
 
@@ -171,19 +176,33 @@ namespace Neon
             };
             header.Children.Add(brand);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            compactButton = ActionButton("=", "Compact mode", ToggleCompact);
-            actions.Children.Add(compactButton);
             actions.Children.Add(ActionButton("⚙", "Open personalization menu", OpenOptions));
             actions.Children.Add(ActionButton("−", "Hide to notification area", delegate { Hide(); }));
             actions.Children.Add(ActionButton("×", "Close NEON", delegate { Close(); }));
             Place(header, actions, 0, 1); headerBody.Children.Add(header);
-            var titleRow = new Grid(); titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            titleRow.Children.Add(Text("PC MONITOR", 20, White, true));
-            time = Text("--:--:--", 10, Muted, true); time.VerticalAlignment = VerticalAlignment.Center; Place(titleRow, time, 0, 1); headerBody.Children.Add(titleRow);
-            themeLabel = Text("MATRIX  /  LIVE 1s", 9, Green, true); themeLabel.Margin = new Thickness(1, 2, 0, 6); headerBody.Children.Add(themeLabel);
             status = Text("●  CONNECTING TO SYSTEM…", 10, Green, true);
-            var statusBox = new Border { Padding = new Thickness(7, 4, 7, 4), BorderBrush = Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = status }; headerBody.Children.Add(statusBox);
+            statusBox = new Border { Padding = new Thickness(7, 4, 7, 4), BorderBrush = Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = status }; headerBody.Children.Add(statusBox);
             cpuModel = Text("", 10, Muted, false); cpuModel.Visibility = Visibility.Collapsed; headerBody.Children.Add(cpuModel);
+            var tabs = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            for (int i = 0; i < 3; i++)
+            {
+                int index = i;
+                tabs.ColumnDefinitions.Add(new ColumnDefinition());
+                var button = new Button { Content = new[] { "Monitor", "Processes", "Storage" }[i],
+                    Style = (Style)Resources["NeonButton"], FontFamily = new FontFamily("Consolas"), FontSize = 10,
+                    Margin = new Thickness(i == 0 ? 0 : 3, 0, i == 2 ? 0 : 3, 0), Padding = new Thickness(2, 3, 2, 3),
+                    ToolTip = "Show " + new[] { "Monitor", "Processes", "Storage" }[i] + " tab" };
+                System.Windows.Automation.AutomationProperties.SetName(button, (string)button.Content + " tab");
+                button.Click += delegate { SelectTab(index); };
+                button.PreviewKeyDown += delegate(object sender, KeyEventArgs e) {
+                    int target = e.Key == Key.Right ? (index + 1) % 3 : e.Key == Key.Left ? (index + 2) % 3 :
+                        e.Key == Key.Home ? 0 : e.Key == Key.End ? 2 : -1;
+                    if (target >= 0) { SelectTab(target); tabButtons[target].Focus(); e.Handled = true; }
+                };
+                Grid.SetColumn(button, i); tabs.Children.Add(button); tabButtons.Add(button);
+            }
+            body.Children.Add(tabs);
+            monitorContent = new StackPanel(); body.Children.Add(monitorContent);
             var cards = new Grid();
             cards.ColumnDefinitions.Add(new ColumnDefinition()); cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.RowDefinitions.Add(new RowDefinition()); cards.RowDefinitions.Add(new RowDefinition());
@@ -191,8 +210,8 @@ namespace Neon
             gpu = CreateMetric("03 / GPU", Green); temperature = CreateMetric("04 / CPU TEMP", Amber);
             cpu.Container.Margin = new Thickness(0, 0, 3, 6); ram.Container.Margin = new Thickness(3, 0, 0, 6);
             gpu.Container.Margin = new Thickness(0, 0, 3, 0); temperature.Container.Margin = new Thickness(3, 0, 0, 0);
-            Place(cards, cpu.Container, 0, 0); Place(cards, ram.Container, 0, 1); Place(cards, gpu.Container, 1, 0); Place(cards, temperature.Container, 1, 1); body.Children.Add(cards);
-            details = new StackPanel { Margin = new Thickness(0, 8, 0, 0) }; body.Children.Add(details);
+            Place(cards, cpu.Container, 0, 0); Place(cards, ram.Container, 0, 1); Place(cards, gpu.Container, 1, 0); Place(cards, temperature.Container, 1, 1); monitorContent.Children.Add(cards);
+            details = new StackPanel { Margin = new Thickness(0, 8, 0, 0) }; monitorContent.Children.Add(details);
             var networkPanel = CreatePanel(new Thickness(0)); networkPanel.Margin = new Thickness(0, 0, 0, 8);
             var networkBody = new StackPanel(); networkPanel.Child = networkBody; details.Children.Add(networkPanel);
             gpuModel = Text("", 10, Muted, false); gpuModel.Visibility = Visibility.Collapsed; networkBody.Children.Add(gpuModel);
@@ -209,11 +228,48 @@ namespace Neon
             storageBody.Children.Add(SectionTitle("LOCAL DRIVES", "STORAGE"));
             diskList = new StackPanel();
             storageBody.Children.Add(new ScrollViewer { Content = diskList, MaxHeight = 100, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
-            memoryDetail = Text("COMMIT  —", 9, Muted, true); memoryDetail.Margin = new Thickness(0, 8, 0, 3); storageBody.Children.Add(memoryDetail);
-            uptime = Text("UPTIME  —", 9, Muted, true); storageBody.Children.Add(uptime);
-            body.Children.Add(new Border { Height = 1, Background = Line, Margin = new Thickness(0, 8, 0, 6) });
-            footer = Text("●  INITIALIZING", 8, Muted, true); body.Children.Add(footer);
+            processesContent = Placeholder("01 / PROCESSES", "The processes using the most CPU and memory will appear here.");
+            storageContent = Placeholder("02 / STORAGE", "SSD usage and the largest space consumers will appear here.");
+            body.Children.Add(processesContent); body.Children.Add(storageContent);
+            UpdateTabs();
             shell.ContextMenu = CreateOptions();
+        }
+
+        private FrameworkElement Placeholder(string title, string description)
+        {
+            var panel = CreatePanel(new Thickness(10), true);
+            var content = new StackPanel();
+            content.Children.Add(Text(title, 10, Green, true));
+            var message = Text(description, 11, Muted, false);
+            message.TextWrapping = TextWrapping.Wrap; message.Margin = new Thickness(0, 8, 0, 0);
+            content.Children.Add(message); panel.Child = content;
+            return new ScrollViewer { Content = panel, MaxHeight = 240, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        }
+
+        internal int SelectedTab { get { return selectedTab; } }
+        internal void SelectTab(int index)
+        {
+            if (index < 0 || index >= tabButtons.Count) throw new ArgumentOutOfRangeException("index");
+            selectedTab = index; UpdateTabs(); UpdateViewportWidth();
+            shell.ContextMenu = CreateOptions();
+            if (IsLoaded) { UpdateLayout(); RestorePosition(); }
+        }
+        private void UpdateTabs()
+        {
+            if (tabButtons.Count != 3 || monitorContent == null) return;
+            monitorContent.Visibility = selectedTab == 0 ? Visibility.Visible : Visibility.Collapsed;
+            processesContent.Visibility = selectedTab == 1 ? Visibility.Visible : Visibility.Collapsed;
+            storageContent.Visibility = selectedTab == 2 ? Visibility.Visible : Visibility.Collapsed;
+            for (int i = 0; i < tabButtons.Count; i++)
+            {
+                bool active = selectedTab == i;
+                tabButtons[i].Foreground = active ? Green : Muted;
+                tabButtons[i].BorderBrush = active ? Green : Line;
+                var color = Green.Color; color.A = (byte)(active ? 32 * preferences.Background : 0);
+                tabButtons[i].Background = new SolidColorBrush(color);
+                System.Windows.Automation.AutomationProperties.SetItemStatus(tabButtons[i], active ? "Selected" : "Not selected");
+            }
         }
 
         private Grid SectionTitle(string title, string suffix)
@@ -260,7 +316,13 @@ namespace Neon
             menu.Items.Add(opacityMenu);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
             var desktopItem = Menu("Always on desktop", delegate { }, true); desktopItem.Tag = "desktop"; desktopItem.IsEnabled = false; desktopItem.Icon = MenuGlyph("M1,2H15V12H1Z M8,12V15 M4,15H12"); menu.Items.Add(desktopItem);
-            var compact = Menu("Compact mode", ToggleCompact, preferences.Compact, true); compact.Tag = "compact"; compact.Icon = MenuGlyph("M1,2H15V7H1Z M1,10H15V15H1Z"); menu.Items.Add(compact);
+            var views = new MenuItem { Header = "Tabs" };
+            for (int i = 0; i < 3; i++)
+            {
+                int index = i;
+                views.Items.Add(Menu(new[] { "Monitor", "Processes", "Storage" }[i], delegate { SelectTab(index); }, selectedTab == i, true));
+            }
+            menu.Items.Add(views);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
             var info = Menu("Sensor information", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
             var visibility = Menu(IsVisible ? "Hide widget" : "Show widget", delegate { if (IsVisible) Hide(); else Reveal(); }, false); visibility.Icon = MenuGlyph("M1,8 Q8,-2 15,8 Q8,18 1,8 M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5"); menu.Items.Add(visibility);
@@ -314,12 +376,6 @@ namespace Neon
             grid.Children.Add(new Image { Source = App.RenderElement(main), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top });
             Place(grid, new Image { Source = App.RenderElement(themes), Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top }, 0, 1); return grid;
         }
-        private void ToggleCompact()
-        {
-            preferences.Compact = !preferences.Compact; ApplyPreferences();
-            if (!preview && IsLoaded) { UpdateLayout(); RestorePosition(); }
-            SavePreferences();
-        }
         private void ApplyPreferences()
         {
             var palette = ThemePalette.Find(preferences.Theme); preferences.Theme = palette.Id;
@@ -338,11 +394,10 @@ namespace Neon
                 chart.Color = chart == ram.Chart || chart == uploadChart ? Cyan.Color : chart == temperature.Chart ? Amber.Color : Green.Color;
                 var gridColor = Line.Color; gridColor.A = 65; chart.GridColor = gridColor; chart.InvalidateVisual();
             }
-            themeLabel.Text = palette.Id.ToUpperInvariant() + "  /  LIVE " + preferences.RefreshSeconds.ToString("0.#") + "s";
             timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
-            Topmost = false; details.Visibility = preferences.Compact ? Visibility.Collapsed : Visibility.Visible;
+            Topmost = false;
+            UpdateTabs();
             UpdateViewportWidth();
-            compactButton.Foreground = preferences.Compact ? Green : Muted;
             shell.ContextMenu = CreateOptions();
             if (desktopLayer != null) desktopLayer.KeepBehind();
         }
@@ -378,21 +433,48 @@ namespace Neon
         }
         internal Preferences CurrentPreferences { get { return preferences.Copy(); } }
         internal double RefreshInterval { get { return timer.Interval.TotalSeconds; } }
-        public void CompactPreview()
-        {
-            if (!preview) throw new InvalidOperationException("Preview mode only.");
-            preferences.Compact = true; ApplyPreferences();
-        }
         public void VerifyInterface()
         {
             if (!preview) throw new InvalidOperationException("UI verification requires preview mode without saving preferences.");
-            preferences.Compact = false; ApplyPreferences();
+            if (selectedTab != 0 || tabButtons.Count != 3 || monitorContent.Visibility != Visibility.Visible ||
+                statusBox.Visibility != Visibility.Visible || !status.Text.Contains("CONNECTING TO SYSTEM"))
+                throw new InvalidOperationException("Monitor is not the initial tab.");
+            int samples = cpu.Chart.SampleCount;
+            SelectTab(1); Update(new Snapshot { CoreAvailable = true, Cpu = 27, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
+            if (selectedTab != 1 || monitorContent.Visibility != Visibility.Collapsed || cpu.Chart.SampleCount <= samples ||
+                statusBox.Visibility != Visibility.Visible || !status.Text.Contains("SYSTEM RUNNING") || status.Foreground != Green)
+                throw new InvalidOperationException("Processes tab stopped hidden monitor updates.");
+            SelectTab(2);
+            if (selectedTab != 2 || storageContent.Visibility != Visibility.Visible)
+                throw new InvalidOperationException("Storage tab is unavailable.");
+            var tabMenu = shell.ContextMenu.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Header) == "Tabs");
+            if (!((MenuItem)tabMenu.Items[2]).IsChecked || ((MenuItem)tabMenu.Items[0]).IsChecked ||
+                System.Windows.Automation.AutomationProperties.GetItemStatus(tabButtons[2]) != "Selected")
+                throw new InvalidOperationException("The selected tab is not reflected in navigation state.");
+            Update(new Snapshot { CoreAvailable = true, CpuTemperature = 95, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
+            if (statusBox.Visibility != Visibility.Visible || !status.Text.Contains("HIGH TEMPERATURE") || status.Foreground != Amber)
+                throw new InvalidOperationException("Warnings are not visible outside Monitor.");
+            Update(new Snapshot { CoreAvailable = true, Cpu = 27, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
+            if (!status.Text.Contains("SYSTEM RUNNING") || status.Foreground != Green)
+                throw new InvalidOperationException("The status did not recover after a warning.");
+            Update(new Snapshot { CoreAvailable = true, Error = "A drive is inaccessible" });
+            if (!status.Text.Contains("SOME READINGS UNAVAILABLE") || status.Foreground != Amber ||
+                !Convert.ToString(status.ToolTip).Contains("A drive is inaccessible"))
+                throw new InvalidOperationException("Partial reading errors are not shown in the shared status.");
+            Update(new Snapshot { CoreAvailable = true, Cpu = 27, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
+            SelectTab(0);
+            if (cpu.Chart.SampleCount <= samples)
+                throw new InvalidOperationException("Returning to Monitor lost chart history.");
             UpdateLayout();
-            shell.Measure(new Size(PanelWidth, Double.PositiveInfinity)); double fullHeight = shell.DesiredSize.Height;
             double fullWidth = ActualWidth;
-            ToggleCompact(); UpdateLayout(); shell.Measure(new Size(PanelWidth, Double.PositiveInfinity));
-            if (shell.DesiredSize.Height >= fullHeight) throw new InvalidOperationException("Compact mode did not reduce the height.");
-            if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Compact mode changed the width.");
+            if (!details.IsVisible || shell.ContextMenu.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Tag) == "compact"))
+                throw new InvalidOperationException("The obsolete compact mode is still available.");
+            foreach (int tab in new[] { 1, 2, 0 })
+            {
+                SelectTab(tab); UpdateLayout();
+                if (selectedTab != tab || Math.Abs(ActualWidth - fullWidth) > 1 || !status.Text.Contains("SYSTEM RUNNING"))
+                    throw new InvalidOperationException("Tab switching changed the panel width or selection.");
+            }
             var area = new Rect(0, 0, 1536, 816);
             var corner = PositionInArea(area, new Size(300, 408), true, new Point(250, 16));
             if (corner.X != 1236 || corner.Y != 0) throw new InvalidOperationException("Default corner placement is incorrect.");
@@ -402,14 +484,14 @@ namespace Neon
             if (clamped.X != 1186 || clamped.Y != 416) throw new InvalidOperationException("The panel extends beyond the screen.");
             double testLeft = Left, testTop = Top;
             preferences.DockToCorner = true;
-            for (int transition = 0; transition < 3; transition++)
+            foreach (int tab in new[] { 1, 2, 0 })
             {
+                SelectTab(tab);
                 UpdateLayout(); RestorePosition();
                 var workArea = CurrentWorkArea();
                 if (Math.Abs(Left + ActualWidth - workArea.Right) > 1 || Math.Abs(Top - workArea.Top) > 1)
-                    throw new InvalidOperationException("Switching modes lost the top-right anchor.");
-                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("The scale changed when switching modes.");
-                ToggleCompact();
+                    throw new InvalidOperationException("Switching tabs lost the top-right anchor.");
+                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Switching tabs changed the width.");
             }
             Left = testLeft; Top = testTop;
             if (Topmost || ShowActivated) throw new InvalidOperationException("The widget can take foreground focus.");
@@ -419,20 +501,20 @@ namespace Neon
             Update(new Snapshot { CoreAvailable = true, Cpu = 20, RamTotal = 100, RamUsed = 50, RamPercent = 50, CpuTemperature = null });
             if (temperature.Value.Text != "N/A" || gpu.Value.Text != "N/A") throw new InvalidOperationException("Missing sensors are displayed as real readings.");
             Update(new Snapshot { CoreAvailable = true, CpuTemperature = 95, RamTotal = 100, RamUsed = 50, RamPercent = 50 });
-            if (!status.Text.Contains("HIGH TEMPERATURE")) throw new InvalidOperationException("High-temperature alert is missing.");
+            if (!status.Text.Contains("HIGH TEMPERATURE") || statusBox.Visibility != Visibility.Visible) throw new InvalidOperationException("High-temperature alert is missing.");
             Update(new Snapshot { CoreAvailable = true, Cpu = 20, RamTotal = 100, RamUsed = 50, RamPercent = 50 });
-            if (temperature.Value.Text != "N/A" || status.Text.Contains("HIGH TEMPERATURE")) throw new InvalidOperationException("A disconnected sensor still displays an old reading.");
+            if (temperature.Value.Text != "N/A" || !status.Text.Contains("SYSTEM RUNNING")) throw new InvalidOperationException("A disconnected sensor still displays an old reading.");
             Update(new Snapshot { CoreAvailable = false });
-            if (ram.Value.Text != "N/A" || !status.Text.Contains("UNAVAILABLE")) throw new InvalidOperationException("A reading error was not reported.");
+            if (ram.Value.Text != "N/A" || !status.Text.Contains("UNAVAILABLE") || statusBox.Visibility != Visibility.Visible) throw new InvalidOperationException("A reading error was not reported.");
             var multi = new Snapshot { CoreAvailable = true, Disks = new List<DiskSnapshot> {
                 new DiskSnapshot { Name = "C:\\", Used = 40, Total = 100, IsSystem = true },
                 new DiskSnapshot { Name = "E:\\", Used = 98, Total = 100 }
             } };
             Update(multi);
             if (diskRows.Count != 2 || !diskRows.ContainsKey("E:\\") || !status.Text.Contains("E:\\")) throw new InvalidOperationException("The second drive or its warning is missing.");
-            preferences.Compact = false; ApplyPreferences(); UpdateLayout();
+            ApplyPreferences(); UpdateLayout();
             if (ActualHeight > viewport.MaxHeight + 1 || ActualWidth >= 480 || !details.IsVisible)
-                throw new InvalidOperationException("The full panel exceeds half the desktop height.");
+                throw new InvalidOperationException("The panel exceeds half the desktop height.");
             double desktopLimit = viewport.MaxHeight;
             viewport.MaxHeight = 300; UpdateLayout();
             var diskBounds = diskList.TransformToAncestor(viewport).TransformBounds(new Rect(diskList.RenderSize));
@@ -446,7 +528,13 @@ namespace Neon
             foreach (var theme in ThemePalette.All)
             {
                 SetTheme(theme.Id);
-                if (Green.Color != Brush(theme.Primary).Color || cpu.Chart.Color != Green.Color || !themeLabel.Text.Contains(theme.Id.ToUpperInvariant())) throw new InvalidOperationException("Theme was not applied: " + theme.Id);
+                if (Green.Color != Brush(theme.Primary).Color || cpu.Chart.Color != Green.Color) throw new InvalidOperationException("Theme was not applied: " + theme.Id);
+                foreach (int tab in new[] { 0, 1, 2 })
+                {
+                    SelectTab(tab); UpdateLayout();
+                    if (tabButtons[tab].Foreground != Green || ActualHeight > viewport.MaxHeight + 1)
+                        throw new InvalidOperationException("A tab is unreadable or outside the desktop with theme: " + theme.Id);
+                }
             }
             var restored = new JavaScriptSerializer().Deserialize<Preferences>(new JavaScriptSerializer().Serialize(preferences));
             if (restored.Theme != preferences.Theme) throw new InvalidOperationException("The theme was not preserved in preferences.");
@@ -479,13 +567,15 @@ namespace Neon
             if (desktopLayer != null) desktopLayer.KeepBehind();
             reading = true;
             try { var sample = await Task.Run(() => telemetry.Read()); if (!shuttingDown) Update(sample); }
-            catch (Exception ex) { footer.Text = "●  READING UNAVAILABLE"; footer.ToolTip = ex.Message; }
+            catch (Exception ex) {
+                status.Text = "●  SYSTEM READING UNAVAILABLE"; status.Foreground = Amber;
+                status.ToolTip = ex.Message;
+            }
             finally { reading = false; }
         }
         public void Update(Snapshot s)
         {
             Latest = s;
-            time.Text = s.Time.ToString("HH:mm:ss");
             cpuModel.Text = s.CpuName; cpuModel.ToolTip = s.CpuName;
             gpuModel.Text = s.GpuName; gpuModel.ToolTip = s.GpuName;
             cpu.Container.ToolTip = s.CpuName + "\nLast 60 samples.";
@@ -502,19 +592,14 @@ namespace Neon
             string previousDiskLayout = diskLayout;
             UpdateDisks(s.Disks);
             if (previousDiskLayout != diskLayout) UpdateViewportWidth();
-            memoryDetail.Text = s.CoreAvailable ? "COMMIT  " + GiB(s.CommitUsed) + " / " + GiB(s.CommitTotal) + " GiB" : "COMMIT  N/A";
-            memoryDetail.ToolTip = "System committed memory / commit limit (RAM + page file).";
-            uptime.Text = "UPTIME  " + (int)s.Uptime.TotalDays + "d " + s.Uptime.Hours.ToString("00") + "h " + s.Uptime.Minutes.ToString("00") + "m";
-            uptime.ToolTip = "Time since the Windows kernel started; Fast Startup may preserve it across shutdowns.";
             bool hot = s.CpuTemperature >= 90 || s.GpuTemperature >= 85;
             bool pressure = s.RamPercent >= 90 || (s.Cpu.HasValue && s.Cpu >= 90);
             var fullDisk = s.Disks.FirstOrDefault(d => d.Total > 0 && d.Used / d.Total >= 0.95);
             bool full = fullDisk != null;
-            status.Text = !s.CoreAvailable ? "●  SYSTEM READING UNAVAILABLE" : hot ? "●  HIGH TEMPERATURE" : full ? "●  DRIVE ALMOST FULL  " + fullDisk.Name : pressure ? "●  HIGH LOAD" : "●  SYSTEM RUNNING";
-            status.Foreground = hot || pressure || full || !s.CoreAvailable ? Amber : Green; status.ToolTip = status.Text;
+            bool warning = !s.CoreAvailable || hot || full || pressure || s.Error != null;
+            status.Text = !s.CoreAvailable ? "●  SYSTEM READING UNAVAILABLE" : hot ? "●  HIGH TEMPERATURE" : full ? "●  DRIVE ALMOST FULL  " + fullDisk.Name : pressure ? "●  HIGH LOAD" : s.Error != null ? "●  SOME READINGS UNAVAILABLE" : "●  SYSTEM RUNNING";
+            status.Foreground = warning ? Amber : Green; status.ToolTip = s.Error ?? status.Text;
             temperature.Value.Foreground = s.CpuTemperature >= 90 ? Amber : White;
-            footer.Text = s.Error != null ? "●  SOME READINGS UNAVAILABLE" : s.CpuTemperature.HasValue ? "●  SENSORS CONNECTED   /   60-SAMPLE HISTORY" : "○  CPU TEMP N/A   /   SENSOR INFO IN MENU";
-            footer.ToolTip = s.Error ?? (s.SensorSource + "\n" + s.SensorNote);
             if (tray != null) tray.Text = "NEON | CPU " + Percent(s.Cpu) + " | RAM " + s.RamPercent.ToString("0") + "%";
         }
         private double networkPeak = 1024;
@@ -656,8 +741,11 @@ namespace Neon
         }
         private void UpdateViewportWidth()
         {
-            var visibility = details.Visibility;
-            details.Visibility = Visibility.Visible;
+            var monitorVisibility = monitorContent.Visibility;
+            var processVisibility = processesContent.Visibility;
+            var storageVisibility = storageContent.Visibility;
+            monitorContent.Visibility = Visibility.Visible;
+            processesContent.Visibility = storageContent.Visibility = Visibility.Collapsed;
             foreach (var item in fontSizes) item.Key.FontSize = item.Value;
             InvalidateMeasurements(shell);
             shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
@@ -666,11 +754,15 @@ namespace Neon
             InvalidateMeasurements(shell);
             shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             double currentFullHeight = shell.DesiredSize.Height;
-            details.Visibility = visibility;
+            monitorContent.Visibility = monitorVisibility;
+            processesContent.Visibility = processVisibility;
+            storageContent.Visibility = storageVisibility;
             double heightLimit = Math.Min(workAreaHeight * 0.90, workAreaHeight / 2 * preferences.WidgetScale * Math.Max(1, preferences.FontScale));
             double desiredWidth = PanelWidth * Math.Min(1, workAreaHeight / 2 / Math.Max(1, fullHeight)) * preferences.WidgetScale;
             viewport.MaxWidth = Math.Min(Math.Min(workAreaWidth, desiredWidth), PanelWidth * heightLimit / Math.Max(1, currentFullHeight));
             viewport.MaxHeight = heightLimit;
+            InvalidateMeasurements(shell);
+            viewport.InvalidateMeasure();
         }
         private static void InvalidateMeasurements(DependencyObject root)
         {

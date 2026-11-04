@@ -40,6 +40,7 @@ namespace Neon
                 }
                 if (args.Length >= 2 && args[0] == "--snapshot") return SnapshotImage(args[1], args.Length >= 3 ? args[2] : null);
                 if (args.Length >= 2 && args[0] == "--gallery") return ThemeGallery(args[1]);
+                if (args.Length >= 2 && args[0] == "--tab-gallery") return TabGallery(args[1]);
                 if (args.Length >= 2 && args[0] == "--menu-preview")
                 {
                     var menuApp = new Application(); var menuWindow = new MonitorWindow(true);
@@ -53,7 +54,7 @@ namespace Neon
                     testWindow.ShowActivated = false; testWindow.Left = -32000; testWindow.Top = -32000;
                     testWindow.Show(); testWindow.UpdateLayout();
                     testWindow.VerifyInterface(); testWindow.Close(); testApp.Shutdown();
-                    File.WriteAllText(args[1], "UI OK: half-desktop height, small-screen fit, compact mode, desktop placement, transparency, missing sensors, alerts, multiple/unavailable/removed drives, six themes and preferences. Final size: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
+                    File.WriteAllText(args[1], "UI OK: half-desktop height, small-screen fit, tab navigation, desktop placement, transparency, missing sensors, alerts, multiple/unavailable/removed drives, six themes and preferences. Final size: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
                     return 0;
                 }
                 bool created;
@@ -110,7 +111,7 @@ namespace Neon
         {
             var app = new Application();
             var window = new MonitorWindow(true);
-            if (theme != null) window.SetTheme(theme);
+            window.SetTheme(theme ?? "matrix");
             var reader = new Telemetry(); reader.Read(); Thread.Sleep(1100);
             // This image contains actual readings; histories are never fabricated.
             window.Update(reader.Read());
@@ -142,13 +143,13 @@ namespace Neon
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             var reader = new Telemetry(); reader.Read(); Thread.Sleep(1100); var sample = reader.Read();
             var drawing = new DrawingVisual();
-            const double scale = 0.90, tileWidth = 346, tileHeight = 300;
+            const double scale = 0.72, tileWidth = 285, tileHeight = 320;
             using (var context = drawing.RenderOpen())
             {
                 context.DrawRectangle(new SolidColorBrush(Color.FromRgb(12, 15, 23)), null, new Rect(0, 0, tileWidth * 3, tileHeight * 2));
                 for (int i = 0; i < ThemePalette.All.Length; i++)
                 {
-                    var window = new MonitorWindow(true); window.SetTheme(ThemePalette.All[i].Id); window.CompactPreview(); window.Update(sample);
+                    var window = new MonitorWindow(true); window.SetTheme(ThemePalette.All[i].Id); window.Update(sample);
                     var bitmap = RenderWindow(window);
                     double x = (i % 3) * tileWidth + 10, y = (i / 3) * tileHeight;
                     context.DrawImage(bitmap, new Rect(x, y, bitmap.PixelWidth * scale, bitmap.PixelHeight * scale));
@@ -156,6 +157,25 @@ namespace Neon
                 }
             }
             var gallery = new RenderTargetBitmap((int)tileWidth * 3, (int)tileHeight * 2, 96, 96, PixelFormats.Pbgra32);
+            gallery.Render(drawing); SaveBitmap(gallery, path); app.Shutdown(); return 0;
+        }
+        private static int TabGallery(string path)
+        {
+            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            var reader = new Telemetry(); reader.Read(); Thread.Sleep(1100); var sample = reader.Read();
+            var drawing = new DrawingVisual();
+            using (var context = drawing.RenderOpen())
+            {
+                context.DrawRectangle(new SolidColorBrush(Color.FromRgb(12, 15, 23)), null, new Rect(0, 0, 1080, 460));
+                for (int i = 0; i < 3; i++)
+                {
+                    var window = new MonitorWindow(true); window.SetTheme("matrix"); window.SelectTab(i); window.Update(sample);
+                    var bitmap = RenderWindow(window);
+                    context.DrawImage(bitmap, new Rect(i * 360 + 10, 10, bitmap.PixelWidth, bitmap.PixelHeight));
+                    window.Close();
+                }
+            }
+            var gallery = new RenderTargetBitmap(1080, 460, 96, 96, PixelFormats.Pbgra32);
             gallery.Render(drawing); SaveBitmap(gallery, path); app.Shutdown(); return 0;
         }
     }

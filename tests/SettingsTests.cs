@@ -12,12 +12,12 @@ namespace Neon
     {
         private static void Assert(bool value, string description)
         { if (!value) throw new InvalidOperationException("Settings: " + description); }
-        private static TextBlock FindTitle(DependencyObject root)
+        private static TextBlock FindBrand(DependencyObject root)
         {
             var text = root as TextBlock;
-            if (text != null && text.Text == "PC MONITOR") return text;
+            if (text != null && text.Text == "●  NEON / SYS") return text;
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            { var child = FindTitle(VisualTreeHelper.GetChild(root, i)); if (child != null) return child; }
+            { var child = FindBrand(VisualTreeHelper.GetChild(root, i)); if (child != null) return child; }
             return null;
         }
         private static T FindControl<T>(DependencyObject root) where T : DependencyObject
@@ -45,22 +45,23 @@ namespace Neon
                 Assert(missing.WidgetScale == 1 && missing.FontScale == 1 && missing.RefreshSeconds == 1, "missing file defaults");
                 File.WriteAllText(path, "{\"Left\":120,\"Top\":30,\"Background\":0,\"Theme\":\"ice\",\"Compact\":true,\"DockToCorner\":false,\"Pinned\":true}");
                 var legacy = PreferencesStore.Load(path);
-                Assert(legacy.Left == 120 && legacy.Top == 30 && legacy.Background == 0 && legacy.Theme == "ice" && legacy.Compact && !legacy.DockToCorner, "legacy settings preserved");
+                Assert(legacy.Left == 120 && legacy.Top == 30 && legacy.Background == 0 && legacy.Theme == "ice" && !legacy.DockToCorner, "legacy settings preserved without compact mode");
                 Assert(legacy.WidgetScale == 1 && legacy.FontScale == 1 && legacy.RefreshSeconds == 1, "new fields migrate to current defaults");
                 File.WriteAllText(path, "invalid json"); Assert(PreferencesStore.Load(path).Theme == "matrix", "malformed settings fallback");
                 File.WriteAllText(path, "null"); Assert(PreferencesStore.Load(path).Background == 0.6, "null settings fallback");
                 var invalid = new Preferences { Background = Double.NaN, FontScale = Double.PositiveInfinity, WidgetScale = -3, RefreshSeconds = 999, Theme = "unknown" }; invalid.Normalize();
                 Assert(invalid.Background == 0.6 && invalid.FontScale == 1 && invalid.WidgetScale == 0.6 && invalid.RefreshSeconds == 10 && invalid.Theme == "matrix", "invalid values normalized");
-                var wanted = new Preferences { WidgetScale = 1.2, FontScale = 1.35, RefreshSeconds = 2.5, Theme = "ghost", Background = 0.35, Left = -120, Top = 20, Compact = true, DockToCorner = false };
+                var wanted = new Preferences { WidgetScale = 1.2, FontScale = 1.35, RefreshSeconds = 2.5, Theme = "ghost", Background = 0.35, Left = -120, Top = 20, DockToCorner = false };
                 Assert(PreferencesStore.Save(path, wanted), "save over a corrupt file");
                 var restored = PreferencesStore.Load(path);
-                Assert(restored.WidgetScale == 1.2 && restored.FontScale == 1.35 && restored.RefreshSeconds == 2.5 && restored.Background == 0.35 && restored.Theme == "ghost" && restored.Left == -120 && restored.Compact && !restored.DockToCorner, "all preferences survive reload");
+                Assert(restored.WidgetScale == 1.2 && restored.FontScale == 1.35 && restored.RefreshSeconds == 2.5 && restored.Background == 0.35 && restored.Theme == "ghost" && restored.Left == -120 && !restored.DockToCorner, "all preferences survive reload");
+                Assert(!File.ReadAllText(path).Contains("\"Compact\""), "obsolete compact setting is not saved");
                 wanted.RefreshSeconds = 5; Assert(PreferencesStore.Save(path, wanted) && PreferencesStore.Load(path).RefreshSeconds == 5, "atomic replacement");
                 Assert(!PreferencesStore.Save(temporary, wanted), "unwritable destination reported without crashing");
                 Assert(Directory.GetFiles(temporary, "*.tmp").Length == 0, "temporary writes cleaned up");
                 VerifyLiveApplication();
                 StartupTests.Run();
-                return "Settings OK: defaults, legacy migration, corrupt/null settings, validation, atomic save/reload, save failure, live application, independent typography, interval, docking, compact mode, shared controls, personalization menu, immediate placement under mouse capture, stable screen-coordinate slider dragging, and Windows startup registration, approval, Save/Cancel/Reset and rollback.";
+                return "Settings OK: defaults, legacy migration, corrupt/null settings, validation, atomic save/reload, save failure, live application, independent typography, interval, docking, single display mode, shared controls, personalization menu, immediate placement under mouse capture, stable screen-coordinate slider dragging, and Windows startup registration, approval, Save/Cancel/Reset and rollback.";
             }
             finally
             {
@@ -73,10 +74,10 @@ namespace Neon
             try
             {
                 monitor.Left = monitor.Top = -32000; monitor.Show(); monitor.ApplyUserSettings(new Preferences()); monitor.UpdateLayout();
-                double initialWidth = monitor.ActualWidth, initialFont = FindTitle(monitor.Visual).FontSize;
+                double initialWidth = monitor.ActualWidth, initialFont = FindBrand(monitor.Visual).FontSize;
                 var changed = monitor.CurrentPreferences; changed.FontScale = 1.2; changed.RefreshSeconds = 2.5; changed.Theme = "ice"; changed.Background = 0.35;
                 Assert(monitor.ApplyUserSettings(changed), "apply settings callback"); monitor.UpdateLayout();
-                Assert(FindTitle(monitor.Visual).FontSize > initialFont && Math.Abs(monitor.ActualWidth - initialWidth) <= 1, "font size independent of widget width");
+                Assert(FindBrand(monitor.Visual).FontSize > initialFont && Math.Abs(monitor.ActualWidth - initialWidth) <= 1, "font size independent of widget width");
                 Assert(monitor.RefreshInterval == 2.5 && monitor.CurrentPreferences.Theme == "ice" && monitor.CurrentPreferences.Background == 0.35, "live interval, theme and opacity");
                 changed.FontScale = 1; changed.WidgetScale = 1.2; monitor.ApplyUserSettings(changed); monitor.UpdateLayout();
                 Assert(monitor.ActualWidth > initialWidth && monitor.ActualHeight <= SystemParameters.WorkArea.Height + 1, "live widget resize fits screen");
@@ -114,7 +115,7 @@ namespace Neon
                 var widgetClose = FindButtons(monitor.Visual).First(b => Convert.ToString(b.Content) == "×");
                 var panelClose = FindButtons(firstSettings.Visual).First(b => Convert.ToString(b.Content) == "×");
                 Assert(widgetClose.Width == panelClose.Width && widgetClose.Height == panelClose.Height && widgetClose.FontSize == panelClose.FontSize && widgetClose.Padding == panelClose.Padding, "shared icon dimensions and typography");
-                Assert(!FindButtons(monitor.Visual).Any(b => Convert.ToString(b.Content) == "···"), "redundant ellipsis button removed");
+                Assert(!FindButtons(monitor.Visual).Any(b => Convert.ToString(b.Content) == "···" || Convert.ToString(b.Content) == "="), "redundant header buttons removed");
                 firstSettings.Close();
                 var beforePreview = monitor.CurrentPreferences; int writes = 0;
                 settings.Close();
@@ -138,9 +139,12 @@ namespace Neon
                         monitor.ApplyUserSettings(changed); monitor.UpdateLayout();
                         Assert(monitor.Left >= SystemParameters.WorkArea.Left - 1 && monitor.Top >= SystemParameters.WorkArea.Top - 1 && monitor.Left + monitor.ActualWidth <= SystemParameters.WorkArea.Right + 1 && monitor.Top + monitor.ActualHeight <= SystemParameters.WorkArea.Bottom + 1, "size and font extremes fit screen");
                         double width = monitor.ActualWidth;
-                        var compact = ((Border)((Viewbox)monitor.Visual).Child).ContextMenu.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "compact");
-                        compact.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); monitor.UpdateLayout();
-                        Assert(Math.Abs(width - monitor.ActualWidth) <= 1, "custom settings preserve compact width: size=" + scale + ", font=" + font + ", before=" + width + ", after=" + monitor.ActualWidth);
+                        Assert(!((Border)((Viewbox)monitor.Visual).Child).ContextMenu.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Tag) == "compact"), "compact menu removed");
+                        foreach (int tab in new[] { 1, 2, 0 })
+                        {
+                            monitor.SelectTab(tab); monitor.UpdateLayout();
+                            Assert(Math.Abs(width - monitor.ActualWidth) <= 1, "custom settings preserve width across tabs: size=" + scale + ", font=" + font + ", tab=" + tab);
+                        }
                     }
             }
             finally { if (settings != null) settings.Close(); monitor.Close(); }
