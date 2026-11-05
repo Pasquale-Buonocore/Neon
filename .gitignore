@@ -1,4 +1,5 @@
 bin/
 data/
 artifacts/
+docs/.obsidian/
 *.log
