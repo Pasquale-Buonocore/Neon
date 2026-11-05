@@ -138,12 +138,13 @@ namespace Neon
                         changed = monitor.CurrentPreferences; changed.WidgetScale = scale; changed.FontScale = font;
                         monitor.ApplyUserSettings(changed); monitor.UpdateLayout();
                         Assert(monitor.Left >= SystemParameters.WorkArea.Left - 1 && monitor.Top >= SystemParameters.WorkArea.Top - 1 && monitor.Left + monitor.ActualWidth <= SystemParameters.WorkArea.Right + 1 && monitor.Top + monitor.ActualHeight <= SystemParameters.WorkArea.Bottom + 1, "size and font extremes fit screen");
-                        double width = monitor.ActualWidth;
+                        double width = monitor.ActualWidth, height = monitor.ActualHeight;
                         Assert(!((Border)((Viewbox)monitor.Visual).Child).ContextMenu.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Tag) == "compact"), "compact menu removed");
                         foreach (int tab in new[] { 1, 2, 0 })
                         {
                             monitor.SelectTab(tab); monitor.UpdateLayout();
-                            Assert(Math.Abs(width - monitor.ActualWidth) <= 1, "custom settings preserve width across tabs: size=" + scale + ", font=" + font + ", tab=" + tab);
+                            Assert(Math.Abs(width - monitor.ActualWidth) <= 1 && Math.Abs(height - monitor.ActualHeight) <= 1,
+                                "custom settings preserve size across tabs: size=" + scale + ", font=" + font + ", tab=" + tab);
                         }
                     }
             }

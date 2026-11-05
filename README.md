@@ -11,7 +11,7 @@ A native desktop widget for 64-bit Windows 10/11, with a transparent background,
 
 ![Monitor, Processes and Storage tabs](assets/screenshots/neon-tabs.png)
 
-*Monitor retains the live readings. Processes and Storage provide entry points for upcoming views.*
+*Monitor retains live readings. Processes shows an explicitly illustrative example in this screenshot; the running app shows current processes. Storage remains an entry point for a future view.*
 
 ## Getting started
 
@@ -23,7 +23,7 @@ Administrator privileges are not required. Launching a second instance shows the
 
 1. Start NEON with **Start.cmd**. The widget appears in the top-right corner of the desktop, behind your applications.
 2. Read live CPU, RAM, GPU, network and disk metrics. Hover over CPU/GPU cards for model names. `N/A` indicates an unavailable sensor.
-3. Choose **Monitor**, **Processes** or **Storage** from the tab row or the **Tabs** menu. Processes and Storage currently show placeholders for their dedicated views. Keyboard users can select tabs through the menu; focused tab buttons also support Left/Right, Home/End and Enter/Space.
+3. Choose **Monitor**, **Processes** or **Storage** from the tab row or the **Tabs** menu. Processes shows the top eight running processes, sortable by CPU or memory; Storage currently shows a placeholder. Keyboard users can select tabs through the menu; focused tab buttons also support Left/Right, Home/End and Enter/Space.
    The shared header shows NEON, its controls, a system status and the tabs. The status shows **SYSTEM RUNNING** during normal operation and an alert when a reading fails or a threshold is reached.
 4. Drag **NEON / SYS** to choose another position.
 5. Click the **gear → Personalize…** to adjust size, text, theme, opacity and refresh rate. Changes appear immediately; click **Save** to keep them or **Cancel** to discard them.
@@ -68,6 +68,7 @@ On Save, NEON registers the quoted absolute executable path directly, or removes
 | Temperatures | Highest available CPU and GPU sensor readings, refreshed every five seconds |
 | Network | Combined download and upload rates across active interfaces, in B/s, KiB/s and MiB/s |
 | Drives | All fixed local volumes, each with used space, capacity and a usage bar; SYS identifies the system drive |
+| Processes | Top eight processes by CPU or physical memory, with name, PID and both metrics |
 
 - System readings refresh at the configured interval, approximately once a second by default. Charts show the last 60 samples, kept only in memory. No monitoring history is saved to disk.
 - The Monitor tab contains the original readings and continues collecting samples while another tab is selected. Tab selection lasts for the current session; NEON starts on Monitor every time.
@@ -83,6 +84,7 @@ On Save, NEON registers the quoted absolute executable path directly, or removes
 - Position, opacity and theme are saved in `data/settings.json` inside the project folder.
 - A shared status row shows **CONNECTING TO SYSTEM…** before the first reading and **SYSTEM RUNNING** while readings are normal. It reports unavailable readings, high temperatures (CPU at 90 °C, GPU at 85 °C), CPU/RAM usage at 90% and drive usage at 95%, then returns to **SYSTEM RUNNING** when the condition clears. These fixed thresholds are general indicators, not hardware diagnostics.
 - The Monitor view ends after the local-drive list. Sensor provider details remain in **Sensor information** and the temperature tooltip.
+- The Processes tab shows total PC CPU and RAM usage above the process list, using the same readings as Monitor. Its **CPU** and **Memory** buttons change the order of the list; every row continues to show the process name, PID, CPU percentage and physical memory. Process CPU is a percentage of the PC's total logical processor capacity, so a process using one core can show a small percentage on a many-core PC. The first process CPU sample after opening the tab is **N/A**; while measuring CPU, the list temporarily ranks by memory. Inaccessible metrics display **N/A** and long names have a full-name tooltip. Disk activity is not shown because the available process I/O counters include operations unrelated to disk use.
 - No account, remote telemetry or cloud service is required. NEON does not change hardware clocks, fan settings or other hardware controls.
 
 The drive list shows volumes with drive letters, rather than physical devices: multiple partitions on one device may appear separately. Inaccessible volumes remain listed as N/A, while removed volumes disappear on the next refresh. Long lists can be scrolled. Removable media and network drives are excluded.
@@ -113,8 +115,8 @@ Network counters add up active interfaces, so VPNs and virtual adapters may coun
 
 The build uses the .NET Framework compiler already installed with Windows. The application is written in C# with a WPF interface and requires no external packages.
 
-Verification covers CPU calculations, network rates using actual intervals, counter resets, interface changes and live readings from all fixed drives. UI checks cover stable scaling, corner placement, desktop mode, transparency, alerts, unavailable sensors, multiple/inaccessible/removed drives, themes and preferences. They also generate `artifacts/neon-preview.png`, `artifacts/neon-themes.png`, `artifacts/neon-menu.png` and `artifacts/neon-icon.png`. Synthetic samples are used only to exercise verification states, never during normal operation or in previews.
-Tab checks cover default selection, switching between all three views, chart history while Monitor is hidden, stable width and the shared status in every view. `artifacts/neon-tabs.png` renders the three tabs using live readings in Monitor.
+Verification covers CPU calculations, network rates using actual intervals, counter resets, interface changes and live readings from all fixed drives. UI checks cover stable scaling, corner placement, desktop mode, transparency, alerts, unavailable sensors, multiple/inaccessible/removed drives, themes and preferences. They also generate `artifacts/neon-preview.png`, `artifacts/neon-themes.png`, `artifacts/neon-menu.png` and `artifacts/neon-icon.png`.
+Process checks cover first-sample N/A, CPU normalized to total capacity, memory sorting, process churn, PID reuse, access limits, counter reset, session reset and live sampling without administrator privileges. Tab checks cover default selection, switching between all three views, chart history while Monitor is hidden, stable window width and height, and the shared status in every view. `artifacts/neon-tabs.png` uses live readings in Monitor and a clearly labeled illustrative sample in Processes. Synthetic process data is never used during normal operation.
 
 Settings checks cover default values, legacy migration, corrupt files, atomic persistence, failed writes, live controls, independent font sizing, refresh intervals, extreme size/font combinations, tab-width stability, docking and the single-instance settings window. `artifacts/neon-settings.png` provides a rendered settings preview.
 

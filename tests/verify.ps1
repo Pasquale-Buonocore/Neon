@@ -4,9 +4,10 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') -ExecutableName $ExecutableName
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-foreach ($mode in @('self-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview')) {
+foreach ($mode in @('self-test', 'process-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview')) {
     $filename = switch ($mode) {
         'self-test' { 'verification.json' }
+        'process-test' { 'process-verification.txt' }
         'ui-test' { 'ui-verification.txt' }
         'desktop-test' { 'desktop-verification.txt' }
         'settings-test' { 'settings-verification.txt' }

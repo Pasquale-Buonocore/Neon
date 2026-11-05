@@ -22,6 +22,7 @@ namespace Neon
             try
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
+                if (args.Length >= 2 && args[0] == "--process-test") { File.WriteAllText(args[1], ProcessTests.Run()); return 0; }
                 if (args.Length >= 2 && args[0] == "--settings-test")
                 {
                     var settingsApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -170,6 +171,14 @@ namespace Neon
                 for (int i = 0; i < 3; i++)
                 {
                     var window = new MonitorWindow(true); window.SetTheme("matrix"); window.SelectTab(i); window.Update(sample);
+                    if (i == 1)
+                    {
+                        var example = new ProcessSnapshot();
+                        example.Entries.Add(new ProcessEntry { Pid = 4100, Name = "Example Editor With A Long Name", CpuPercent = 18.4, WorkingSetBytes = 850L * 1048576 });
+                        example.Entries.Add(new ProcessEntry { Pid = 6200, Name = "Example Browser", CpuPercent = 9.2, WorkingSetBytes = 1740L * 1048576 });
+                        example.Entries.Add(new ProcessEntry { Pid = 7300, Name = "Example Build", CpuPercent = 4.8, WorkingSetBytes = 420L * 1048576 });
+                        window.PreviewProcesses(example);
+                    }
                     var bitmap = RenderWindow(window);
                     context.DrawImage(bitmap, new Rect(i * 360 + 10, 10, bitmap.PixelWidth, bitmap.PixelHeight));
                     window.Close();

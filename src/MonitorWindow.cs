@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -60,6 +61,12 @@ namespace Neon
         public DiskSnapshot Data;
     }
 
+    internal sealed class ProcessRow
+    {
+        public Grid Container;
+        public TextBlock Name, Pid, Cpu, Memory;
+    }
+
     public sealed class MonitorWindow : Window
     {
         public const double PanelWidth = 350;
@@ -68,6 +75,8 @@ namespace Neon
         private readonly List<Border> panels = new List<Border>();
         private readonly Dictionary<TextBlock, double> fontSizes = new Dictionary<TextBlock, double>();
         private readonly Telemetry telemetry = new Telemetry();
+        private readonly Stopwatch processClock = Stopwatch.StartNew();
+        private readonly ProcessSampler processSampler;
         private readonly DispatcherTimer timer = new DispatcherTimer();
         private readonly Preferences preferences;
         private readonly string settingsPath;
@@ -83,6 +92,13 @@ namespace Neon
         private StackPanel details;
         private StackPanel monitorContent;
         private FrameworkElement processesContent, storageContent;
+        private readonly List<ProcessRow> processRows = new List<ProcessRow>();
+        private TextBlock processNote;
+        private TextBlock processTotalCpu, processTotalRam;
+        private Button cpuSortButton, memorySortButton;
+        private ProcessSnapshot latestProcesses;
+        private bool sortProcessesByMemory, processReading, processRefreshPending;
+        private int processSession;
         private readonly List<Button> tabButtons = new List<Button>();
         private int selectedTab;
         private TextBlock cpuModel, gpuModel, status, download, upload;
@@ -99,6 +115,7 @@ namespace Neon
         public MonitorWindow(bool isPreview)
         {
             preview = isPreview;
+            processSampler = new ProcessSampler(new WindowsProcessSource(), () => processClock.Elapsed.TotalSeconds);
             settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "data", "settings.json");
             preferences = ReadPreferences();
             Title = "NEON // PC Monitor"; SizeToContent = SizeToContent.WidthAndHeight;
@@ -124,8 +141,8 @@ namespace Neon
                 Left = SystemParameters.WorkArea.Right - PanelWidth; Top = SystemParameters.WorkArea.Top;
                 Loaded += async delegate { FitToDesktop(); UpdateLayout(); RestorePosition(); await Refresh(); timer.Start(); };
                 timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
-                timer.Tick += async delegate { await Refresh(); };
-                Closing += delegate { shuttingDown = true; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
+                timer.Tick += async delegate { if (selectedTab == 1) RefreshProcesses(); await Refresh(); };
+                Closing += delegate { shuttingDown = true; processSession++; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
                 LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } } };
                 SizeChanged += delegate { QueuePosition(); };
             }
@@ -202,7 +219,8 @@ namespace Neon
                 Grid.SetColumn(button, i); tabs.Children.Add(button); tabButtons.Add(button);
             }
             body.Children.Add(tabs);
-            monitorContent = new StackPanel(); body.Children.Add(monitorContent);
+            var views = new Grid(); body.Children.Add(views);
+            monitorContent = new StackPanel(); views.Children.Add(monitorContent);
             var cards = new Grid();
             cards.ColumnDefinitions.Add(new ColumnDefinition()); cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.RowDefinitions.Add(new RowDefinition()); cards.RowDefinitions.Add(new RowDefinition());
@@ -228,9 +246,11 @@ namespace Neon
             storageBody.Children.Add(SectionTitle("LOCAL DRIVES", "STORAGE"));
             diskList = new StackPanel();
             storageBody.Children.Add(new ScrollViewer { Content = diskList, MaxHeight = 100, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
-            processesContent = Placeholder("01 / PROCESSES", "The processes using the most CPU and memory will appear here.");
+            processesContent = CreateProcessView();
             storageContent = Placeholder("02 / STORAGE", "SSD usage and the largest space consumers will appear here.");
-            body.Children.Add(processesContent); body.Children.Add(storageContent);
+            processesContent.VerticalAlignment = VerticalAlignment.Top;
+            storageContent.VerticalAlignment = VerticalAlignment.Top;
+            views.Children.Add(processesContent); views.Children.Add(storageContent);
             UpdateTabs();
             shell.ContextMenu = CreateOptions();
         }
@@ -247,20 +267,84 @@ namespace Neon
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         }
 
+        private FrameworkElement CreateProcessView()
+        {
+            var panel = CreatePanel(new Thickness(9), true);
+            var content = new StackPanel(); panel.Child = content;
+            var heading = new Grid();
+            heading.ColumnDefinitions.Add(new ColumnDefinition());
+            heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var title = Text("01 / PROCESSES", 10, Green, true); title.VerticalAlignment = VerticalAlignment.Center;
+            heading.Children.Add(title);
+            var sorts = new StackPanel { Orientation = Orientation.Horizontal };
+            cpuSortButton = new Button { Content = "CPU", Style = (Style)Resources["NeonButton"], FontFamily = new FontFamily("Consolas"), FontSize = 10, Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(0, 0, 3, 0), ToolTip = "Sort processes by CPU usage" };
+            memorySortButton = new Button { Content = "Memory", Style = (Style)Resources["NeonButton"], FontFamily = new FontFamily("Consolas"), FontSize = 10, Padding = new Thickness(5, 2, 5, 2), ToolTip = "Sort processes by physical memory" };
+            cpuSortButton.Click += delegate { sortProcessesByMemory = false; RenderProcesses(); };
+            memorySortButton.Click += delegate { sortProcessesByMemory = true; RenderProcesses(); };
+            sorts.Children.Add(cpuSortButton); sorts.Children.Add(memorySortButton);
+            Place(heading, sorts, 0, 1); content.Children.Add(heading);
+            var totals = new Grid { Margin = new Thickness(0, 7, 0, 2) };
+            totals.ColumnDefinitions.Add(new ColumnDefinition()); totals.ColumnDefinitions.Add(new ColumnDefinition());
+            var totalCpu = new StackPanel { Orientation = Orientation.Horizontal };
+            totalCpu.Children.Add(Text("TOTAL CPU", 9, Muted, true));
+            processTotalCpu = Text("—", 16, Green, true); processTotalCpu.Margin = new Thickness(7, 0, 0, 0);
+            processTotalCpu.ToolTip = "Total PC CPU usage, also shown in Monitor."; totalCpu.Children.Add(processTotalCpu);
+            totals.Children.Add(totalCpu);
+            var totalRam = new StackPanel { Orientation = Orientation.Horizontal };
+            totalRam.Children.Add(Text("TOTAL RAM", 9, Muted, true));
+            processTotalRam = Text("—", 16, Cyan, true); processTotalRam.Margin = new Thickness(7, 0, 0, 0);
+            processTotalRam.ToolTip = "Total physical memory usage, also shown in Monitor."; totalRam.Children.Add(processTotalRam);
+            Place(totals, totalRam, 0, 1); content.Children.Add(totals);
+            processNote = Text("Collecting processes…", 9, Muted, false);
+            processNote.TextWrapping = TextWrapping.Wrap;
+            processNote.Margin = new Thickness(0, 7, 0, 7); content.Children.Add(processNote);
+            var list = new StackPanel();
+            for (int i = 0; i < 8; i++)
+            {
+                var row = new ProcessRow();
+                row.Container = new Grid { Margin = new Thickness(0, 0, 0, 5), Visibility = Visibility.Collapsed, Focusable = true };
+                row.Container.ColumnDefinitions.Add(new ColumnDefinition());
+                row.Container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(55) });
+                row.Container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+                var identity = new StackPanel();
+                row.Name = Text("", 11, White, true);
+                row.Pid = Text("", 8, Muted, true);
+                identity.Children.Add(row.Name); identity.Children.Add(row.Pid);
+                row.Container.Children.Add(identity);
+                row.Cpu = Text("", 10, Green, true); row.Cpu.TextAlignment = TextAlignment.Right;
+                row.Cpu.VerticalAlignment = VerticalAlignment.Center; Place(row.Container, row.Cpu, 0, 1);
+                row.Memory = Text("", 10, Cyan, true); row.Memory.TextAlignment = TextAlignment.Right;
+                row.Memory.VerticalAlignment = VerticalAlignment.Center; Place(row.Container, row.Memory, 0, 2);
+                processRows.Add(row); list.Children.Add(row.Container);
+            }
+            content.Children.Add(new ScrollViewer { Content = list, Height = 225, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+            UpdateProcessSortButtons();
+            return panel;
+        }
+
         internal int SelectedTab { get { return selectedTab; } }
         internal void SelectTab(int index)
         {
             if (index < 0 || index >= tabButtons.Count) throw new ArgumentOutOfRangeException("index");
+            int previous = selectedTab;
+            if (previous != index && (previous == 1 || index == 1))
+            {
+                processSession++;
+                if (previous == 1) processRefreshPending = false;
+                if (index == 1) { latestProcesses = null; RenderProcesses(); }
+            }
             selectedTab = index; UpdateTabs(); UpdateViewportWidth();
             shell.ContextMenu = CreateOptions();
             if (IsLoaded) { UpdateLayout(); RestorePosition(); }
+            if (index == 1 && previous != 1 && !preview) RefreshProcesses(true);
         }
         private void UpdateTabs()
         {
             if (tabButtons.Count != 3 || monitorContent == null) return;
-            monitorContent.Visibility = selectedTab == 0 ? Visibility.Visible : Visibility.Collapsed;
-            processesContent.Visibility = selectedTab == 1 ? Visibility.Visible : Visibility.Collapsed;
-            storageContent.Visibility = selectedTab == 2 ? Visibility.Visible : Visibility.Collapsed;
+            monitorContent.Visibility = selectedTab == 0 ? Visibility.Visible : Visibility.Hidden;
+            processesContent.Visibility = selectedTab == 1 ? Visibility.Visible : Visibility.Hidden;
+            storageContent.Visibility = selectedTab == 2 ? Visibility.Visible : Visibility.Hidden;
             for (int i = 0; i < tabButtons.Count; i++)
             {
                 bool active = selectedTab == i;
@@ -269,6 +353,95 @@ namespace Neon
                 var color = Green.Color; color.A = (byte)(active ? 32 * preferences.Background : 0);
                 tabButtons[i].Background = new SolidColorBrush(color);
                 System.Windows.Automation.AutomationProperties.SetItemStatus(tabButtons[i], active ? "Selected" : "Not selected");
+            }
+        }
+
+        private void UpdateProcessSortButtons()
+        {
+            if (cpuSortButton == null) return;
+            foreach (var button in new[] { cpuSortButton, memorySortButton })
+            {
+                bool active = button == (sortProcessesByMemory ? memorySortButton : cpuSortButton);
+                button.Content = button == cpuSortButton ? active ? "CPU ↓" : "CPU" : active ? "Memory ↓" : "Memory";
+                button.Foreground = active ? Green : Muted;
+                button.BorderBrush = active ? Green : Line;
+                var color = Green.Color; color.A = (byte)(active ? 32 * preferences.Background : 0);
+                button.Background = new SolidColorBrush(color);
+                System.Windows.Automation.AutomationProperties.SetItemStatus(button, active ? "Selected" : "Not selected");
+            }
+        }
+
+        private static string ProcessMemory(long? bytes)
+        {
+            if (!bytes.HasValue) return "N/A";
+            double mib = bytes.Value / 1048576.0;
+            return mib >= 1024 ? (mib / 1024).ToString("0.0") + " GiB" : mib.ToString("0.0") + " MiB";
+        }
+
+        private void RenderProcesses()
+        {
+            if (processNote == null) return;
+            UpdateProcessSortButtons();
+            foreach (var row in processRows) row.Container.Visibility = Visibility.Collapsed;
+            if (latestProcesses == null)
+            {
+                processNote.Text = "Collecting processes…"; processNote.ToolTip = null; return;
+            }
+            if (latestProcesses.Error != null)
+            {
+                processNote.Text = "Process scan unavailable. Retrying…";
+                processNote.ToolTip = latestProcesses.Error; return;
+            }
+            if (latestProcesses.Entries.Count == 0)
+            {
+                processNote.Text = "No accessible processes found."; processNote.ToolTip = null; return;
+            }
+            processNote.Text = latestProcesses.Illustrative ? "Illustrative sample · CPU % of total PC capacity" :
+                latestProcesses.MeasuringCpu && !sortProcessesByMemory ? "Measuring CPU · temporarily sorted by memory" :
+                sortProcessesByMemory ? "Sorted by memory · CPU % of total PC" : "Sorted by CPU · CPU % of total PC";
+            processNote.ToolTip = null;
+            var top = ProcessRanking.Top(latestProcesses, sortProcessesByMemory, processRows.Count);
+            for (int i = 0; i < top.Count; i++)
+            {
+                var entry = top[i]; var row = processRows[i];
+                row.Name.Text = entry.Name; row.Name.ToolTip = entry.Name;
+                row.Pid.Text = "PID " + entry.Pid;
+                row.Cpu.Text = entry.CpuPercent.HasValue ? entry.CpuPercent.Value.ToString("0.0") + "%" : "N/A";
+                row.Memory.Text = ProcessMemory(entry.WorkingSetBytes);
+                row.Container.ToolTip = entry.Name + " · PID " + entry.Pid + "\nCPU " + row.Cpu.Text + " · RAM " + row.Memory.Text;
+                System.Windows.Automation.AutomationProperties.SetName(row.Container, entry.Name + ", PID " + entry.Pid + ", CPU " + row.Cpu.Text + ", memory " + row.Memory.Text);
+                row.Container.Visibility = Visibility.Visible;
+            }
+        }
+
+        internal void PreviewProcesses(ProcessSnapshot sample)
+        {
+            if (!preview) throw new InvalidOperationException("Preview mode only.");
+            sample.Illustrative = true; latestProcesses = sample; RenderProcesses();
+        }
+
+        private async void RefreshProcesses(bool onOpen = false)
+        {
+            if (preview || shuttingDown || selectedTab != 1) return;
+            if (processReading) { if (onOpen) processRefreshPending = true; return; }
+            processReading = true;
+            int session = processSession;
+            try
+            {
+                var sample = await Task.Run(() => processSampler.Read(session));
+                if (!shuttingDown && selectedTab == 1 && session == processSession)
+                { latestProcesses = sample; RenderProcesses(); }
+            }
+            catch (Exception ex)
+            {
+                if (!shuttingDown && selectedTab == 1 && session == processSession)
+                { latestProcesses = new ProcessSnapshot { Error = ex.Message }; RenderProcesses(); }
+            }
+            finally
+            {
+                processReading = false;
+                if (processRefreshPending && !shuttingDown && selectedTab == 1)
+                { processRefreshPending = false; RefreshProcesses(); }
             }
         }
 
@@ -397,6 +570,7 @@ namespace Neon
             timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
             Topmost = false;
             UpdateTabs();
+            UpdateProcessSortButtons();
             UpdateViewportWidth();
             shell.ContextMenu = CreateOptions();
             if (desktopLayer != null) desktopLayer.KeepBehind();
@@ -441,9 +615,34 @@ namespace Neon
                 throw new InvalidOperationException("Monitor is not the initial tab.");
             int samples = cpu.Chart.SampleCount;
             SelectTab(1); Update(new Snapshot { CoreAvailable = true, Cpu = 27, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
-            if (selectedTab != 1 || monitorContent.Visibility != Visibility.Collapsed || cpu.Chart.SampleCount <= samples ||
-                statusBox.Visibility != Visibility.Visible || !status.Text.Contains("SYSTEM RUNNING") || status.Foreground != Green)
+            if (selectedTab != 1 || monitorContent.Visibility != Visibility.Hidden || cpu.Chart.SampleCount <= samples ||
+                statusBox.Visibility != Visibility.Visible || !status.Text.Contains("SYSTEM RUNNING") || status.Foreground != Green ||
+                processTotalCpu.Text != cpu.Value.Text || processTotalRam.Text != ram.Value.Text)
                 throw new InvalidOperationException("Processes tab stopped hidden monitor updates.");
+            UpdateLayout();
+            double measuringHeight = ActualHeight;
+            var processExample = new ProcessSnapshot();
+            for (int i = 0; i < 8; i++)
+                processExample.Entries.Add(new ProcessEntry { Pid = 100 + i, Name = i == 0 ? "A very long illustrative process name" : "Example " + i,
+                    CpuPercent = i == 0 ? 20 : i == 1 ? 5 : 1, WorkingSetBytes = (i == 1 ? 2048L : 100L) * 1048576 });
+            PreviewProcesses(processExample); UpdateLayout();
+            if (processRows.Count != 8 || processRows[7].Container.Visibility != Visibility.Visible ||
+                ActualHeight > viewport.MaxHeight + 1 || Math.Abs(ActualHeight - measuringHeight) > 1 ||
+                processRows[0].Name.Text != processExample.Entries[0].Name ||
+                processRows[0].Name.ToolTip as string != processExample.Entries[0].Name || !processNote.Text.Contains("Illustrative"))
+                throw new InvalidOperationException("The process list or its long-name tooltip is missing.");
+            memorySortButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (processRows[0].Pid.Text != "PID 101" || !sortProcessesByMemory)
+                throw new InvalidOperationException("Memory sorting did not update the process list.");
+            cpuSortButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (processRows[0].Pid.Text != "PID 100" || sortProcessesByMemory)
+                throw new InvalidOperationException("CPU sorting did not update the process list.");
+            PreviewProcesses(new ProcessSnapshot { Error = "Process scan failed" });
+            if (processRows.Any(row => row.Container.Visibility != Visibility.Collapsed) || !processNote.Text.Contains("unavailable"))
+                throw new InvalidOperationException("A failed process scan left stale rows visible.");
+            UpdateLayout();
+            if (Math.Abs(ActualHeight - measuringHeight) > 1)
+                throw new InvalidOperationException("The process list changed the window height while loading or retrying.");
             SelectTab(2);
             if (selectedTab != 2 || storageContent.Visibility != Visibility.Visible)
                 throw new InvalidOperationException("Storage tab is unavailable.");
@@ -466,14 +665,14 @@ namespace Neon
             if (cpu.Chart.SampleCount <= samples)
                 throw new InvalidOperationException("Returning to Monitor lost chart history.");
             UpdateLayout();
-            double fullWidth = ActualWidth;
+            double fullWidth = ActualWidth, fullHeight = ActualHeight;
             if (!details.IsVisible || shell.ContextMenu.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Tag) == "compact"))
                 throw new InvalidOperationException("The obsolete compact mode is still available.");
             foreach (int tab in new[] { 1, 2, 0 })
             {
                 SelectTab(tab); UpdateLayout();
-                if (selectedTab != tab || Math.Abs(ActualWidth - fullWidth) > 1 || !status.Text.Contains("SYSTEM RUNNING"))
-                    throw new InvalidOperationException("Tab switching changed the panel width or selection.");
+                if (selectedTab != tab || Math.Abs(ActualWidth - fullWidth) > 1 || Math.Abs(ActualHeight - fullHeight) > 1 || !status.Text.Contains("SYSTEM RUNNING"))
+                    throw new InvalidOperationException("Tab switching changed the panel size or selection.");
             }
             var area = new Rect(0, 0, 1536, 816);
             var corner = PositionInArea(area, new Size(300, 408), true, new Point(250, 16));
@@ -491,7 +690,8 @@ namespace Neon
                 var workArea = CurrentWorkArea();
                 if (Math.Abs(Left + ActualWidth - workArea.Right) > 1 || Math.Abs(Top - workArea.Top) > 1)
                     throw new InvalidOperationException("Switching tabs lost the top-right anchor.");
-                if (Math.Abs(ActualWidth - fullWidth) > 1) throw new InvalidOperationException("Switching tabs changed the width.");
+                if (Math.Abs(ActualWidth - fullWidth) > 1 || Math.Abs(ActualHeight - fullHeight) > 1)
+                    throw new InvalidOperationException("Switching tabs changed the size.");
             }
             Left = testLeft; Top = testTop;
             if (Topmost || ShowActivated) throw new InvalidOperationException("The widget can take foreground focus.");
@@ -505,7 +705,7 @@ namespace Neon
             Update(new Snapshot { CoreAvailable = true, Cpu = 20, RamTotal = 100, RamUsed = 50, RamPercent = 50 });
             if (temperature.Value.Text != "N/A" || !status.Text.Contains("SYSTEM RUNNING")) throw new InvalidOperationException("A disconnected sensor still displays an old reading.");
             Update(new Snapshot { CoreAvailable = false });
-            if (ram.Value.Text != "N/A" || !status.Text.Contains("UNAVAILABLE") || statusBox.Visibility != Visibility.Visible) throw new InvalidOperationException("A reading error was not reported.");
+            if (ram.Value.Text != "N/A" || processTotalRam.Text != "N/A" || !status.Text.Contains("UNAVAILABLE") || statusBox.Visibility != Visibility.Visible) throw new InvalidOperationException("A reading error was not reported.");
             var multi = new Snapshot { CoreAvailable = true, Disks = new List<DiskSnapshot> {
                 new DiskSnapshot { Name = "C:\\", Used = 40, Total = 100, IsSystem = true },
                 new DiskSnapshot { Name = "E:\\", Used = 98, Total = 100 }
@@ -576,6 +776,8 @@ namespace Neon
         public void Update(Snapshot s)
         {
             Latest = s;
+            processTotalCpu.Text = Percent(s.Cpu);
+            processTotalRam.Text = s.CoreAvailable ? s.RamPercent.ToString("0") + "%" : "N/A";
             cpuModel.Text = s.CpuName; cpuModel.ToolTip = s.CpuName;
             gpuModel.Text = s.GpuName; gpuModel.ToolTip = s.GpuName;
             cpu.Container.ToolTip = s.CpuName + "\nLast 60 samples.";
@@ -741,11 +943,6 @@ namespace Neon
         }
         private void UpdateViewportWidth()
         {
-            var monitorVisibility = monitorContent.Visibility;
-            var processVisibility = processesContent.Visibility;
-            var storageVisibility = storageContent.Visibility;
-            monitorContent.Visibility = Visibility.Visible;
-            processesContent.Visibility = storageContent.Visibility = Visibility.Collapsed;
             foreach (var item in fontSizes) item.Key.FontSize = item.Value;
             InvalidateMeasurements(shell);
             shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
@@ -754,9 +951,6 @@ namespace Neon
             InvalidateMeasurements(shell);
             shell.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             double currentFullHeight = shell.DesiredSize.Height;
-            monitorContent.Visibility = monitorVisibility;
-            processesContent.Visibility = processVisibility;
-            storageContent.Visibility = storageVisibility;
             double heightLimit = Math.Min(workAreaHeight * 0.90, workAreaHeight / 2 * preferences.WidgetScale * Math.Max(1, preferences.FontScale));
             double desiredWidth = PanelWidth * Math.Min(1, workAreaHeight / 2 / Math.Max(1, fullHeight)) * preferences.WidgetScale;
             viewport.MaxWidth = Math.Min(Math.Min(workAreaWidth, desiredWidth), PanelWidth * heightLimit / Math.Max(1, currentFullHeight));
