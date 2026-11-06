@@ -92,7 +92,31 @@ namespace Neon
             Thread.Sleep(600);
             var liveSecond = live.Read(1);
             Check(liveSecond.Entries.Any(e => e.Pid == ownPid && e.CpuPercent >= 0 && e.CpuPercent <= 100), "live process CPU is measured on the second sample");
-            return "Processes OK: first sample, total-capacity CPU, memory sorting, process churn, PID reuse, access limits, counter reset, session reset and live sampling.";
+            using (var worker = Process.Start(new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, "--process-worker")
+                { UseShellExecute = false, CreateNoWindow = true }))
+            {
+                try
+                {
+                    var workerSampler = new ProcessSampler(new WindowsProcessSource(), () => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency);
+                    bool seen = false, measuredCpu = false, measuredMemory = false;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        Thread.Sleep(650);
+                        var frame = workerSampler.Read(1);
+                        var row = frame.Entries.FirstOrDefault(e => e.Pid == worker.Id);
+                        seen |= row != null;
+                        measuredCpu |= row != null && row.CpuPercent.HasValue && row.CpuPercent.Value > 0;
+                        measuredMemory |= row != null && row.WorkingSetBytes.HasValue && row.WorkingSetBytes.Value >= 16L * 1048576;
+                        Check(ProcessRanking.Top(frame, false, frame.Entries.Count).Any(e => e.Pid == worker.Id) &&
+                            ProcessRanking.Top(frame, true, frame.Entries.Count).Any(e => e.Pid == worker.Id), "worker remains visible in CPU and Memory sort");
+                    }
+                    Check(seen && measuredCpu && measuredMemory, "worker PID, CPU and RAM update across three samples");
+                    Check(worker.WaitForExit(8000), "worker exits on schedule");
+                    Check(!workerSampler.Read(1).Entries.Any(e => e.Pid == worker.Id), "closed worker disappears from Processes");
+                }
+                finally { if (!worker.HasExited) worker.Kill(); }
+            }
+            return "Processes OK: sorting, churn, PID reuse, access limits, live sampling, and worker PID/CPU/RAM appearance and exit.";
         }
     }
 }

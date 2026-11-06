@@ -26,6 +26,7 @@ Paths below are repository-relative names for finding code from the cloned repos
 | WPF widget, tabs, charts, alerts, menus, refresh, settings orchestration | `src/MonitorWindow.cs` | UI test mode in `src/MonitorWindow.cs`; `tests/verify.ps1` |
 | CPU, RAM, network, fixed volumes, GPU and temperature providers; snapshot data | `src/Telemetry.cs` | Self-test mode in `src/App.cs`; `tests/verify.ps1` |
 | Per-process collection, CPU deltas, PID reuse handling, ranking | `src/ProcessTelemetry.cs` | `tests/ProcessTests.cs` |
+| On-demand M-Lab download/upload test and companion tachometer window | `src/MlabSpeedTest.cs`, `src/SpeedTestWindow.cs`, `src/SpeedGauge.cs` | Manual `--speed-test` mode, `speed-preview`, and UI companion checks in `tests/verify.ps1` |
 | Preferences, defaults, normalization, atomic JSON persistence | `src/Preferences.cs` | `tests/SettingsTests.cs` |
 | Personalize window and live preview | `src/SettingsWindow.cs`, `src/DesktopSlider.cs` | `tests/SettingsTests.cs` and UI test mode |
 | Current-user startup registration and Windows approval state | `src/StartupRegistration.cs`, `src/WindowsStartupRegistry.cs` | `tests/StartupTests.cs` |

@@ -86,6 +86,7 @@ namespace Neon
         private System.Drawing.Icon trayIcon;
         private DesktopLayer desktopLayer;
         private SettingsWindow settingsWindow;
+        private SpeedTestWindow speedTestWindow;
         private double workAreaHeight = SystemParameters.WorkArea.Height, workAreaWidth = SystemParameters.WorkArea.Width;
         private Border shell;
         private Viewbox viewport;
@@ -142,8 +143,8 @@ namespace Neon
                 Loaded += async delegate { FitToDesktop(); UpdateLayout(); RestorePosition(); await Refresh(); timer.Start(); };
                 timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
                 timer.Tick += async delegate { if (selectedTab == 1) RefreshProcesses(); await Refresh(); };
-                Closing += delegate { shuttingDown = true; processSession++; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
-                LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } } };
+                Closing += delegate { shuttingDown = true; processSession++; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); if (speedTestWindow != null) speedTestWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
+                LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } PositionCompanionWindows(); } };
                 SizeChanged += delegate { QueuePosition(); };
             }
         }
@@ -497,6 +498,7 @@ namespace Neon
             }
             menu.Items.Add(views);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
+            menu.Items.Add(Menu("Internet speed test…", OpenSpeedTest, false));
             var info = Menu("Sensor information", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
             var visibility = Menu(IsVisible ? "Hide widget" : "Show widget", delegate { if (IsVisible) Hide(); else Reveal(); }, false); visibility.Icon = MenuGlyph("M1,8 Q8,-2 15,8 Q8,18 1,8 M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5"); menu.Items.Add(visibility);
             var exit = Menu("Quit NEON", delegate { Close(); }, false); exit.Icon = MenuGlyph("M8,1V8 M4,3 A6,6 0 1 0 12,3"); menu.Items.Add(exit);
@@ -537,6 +539,20 @@ namespace Neon
             shell.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
             shell.ContextMenu.IsOpen = true; shell.ContextMenu.Focus();
         }
+        private void OpenSpeedTest()
+        {
+            if (!preview && !IsVisible) Reveal();
+            if (speedTestWindow != null) { speedTestWindow.KeepOnDesktop(); return; }
+            if (settingsWindow != null) settingsWindow.Close();
+            speedTestWindow = new SpeedTestWindow(preferences);
+            var area = CurrentWorkArea();
+            speedTestWindow.MinWidth = 100; speedTestWindow.MinHeight = 100;
+            speedTestWindow.MaxWidth = area.Width; speedTestWindow.MaxHeight = area.Height;
+            PositionCompanionWindows();
+            if (preview) { speedTestWindow.Left = speedTestWindow.Top = -32000; }
+            speedTestWindow.Closed += delegate { speedTestWindow = null; };
+            speedTestWindow.Show();
+        }
         public FrameworkElement MenuPreview()
         {
             var grid = new Grid { Background = Brush("#111A21"), Margin = new Thickness(0) };
@@ -568,6 +584,7 @@ namespace Neon
                 var gridColor = Line.Color; gridColor.A = 65; chart.GridColor = gridColor; chart.InvalidateVisual();
             }
             timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
+            if (speedTestWindow != null) speedTestWindow.ApplyAppearance(preferences);
             Topmost = false;
             UpdateTabs();
             UpdateProcessSortButtons();
@@ -580,6 +597,7 @@ namespace Neon
         {
             if (!preview && !IsVisible) Reveal();
             if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.RefreshStartupState(); settingsWindow.KeepOnDesktop(); return; }
+            if (speedTestWindow != null) speedTestWindow.Close();
             settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings,
                 preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration());
             var area = CurrentWorkArea();
@@ -589,7 +607,7 @@ namespace Neon
             settingsWindow.MaxWidth = area.Width; settingsWindow.MaxHeight = Math.Max(200, area.Height - 24);
             settingsWindow.Width = Math.Min(settingsWindow.Width, area.Width);
             settingsWindow.Height = Math.Min(settingsWindow.Height, settingsWindow.MaxHeight);
-            PositionSettingsWindow();
+            PositionCompanionWindows();
             if (preview) { settingsWindow.ShowActivated = false; settingsWindow.ShowInTaskbar = false; settingsWindow.Left = settingsWindow.Top = -32000; }
             settingsWindow.Closed += delegate { settingsWindow = null; };
             settingsWindow.Show();
@@ -752,6 +770,8 @@ namespace Neon
             options = CreateOptions();
             var desktopItem = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "desktop");
             if (desktopItem.IsEnabled || !desktopItem.IsChecked || Topmost) throw new InvalidOperationException("Desktop mode was not applied.");
+            if (!options.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Header) == "Internet speed test…"))
+                throw new InvalidOperationException("The on-demand Internet speed test is missing from the menu.");
             var legacy = new JavaScriptSerializer().Deserialize<Preferences>("{\"Pinned\":true,\"Theme\":\"ice\"}");
             if (legacy.Theme != "ice") throw new InvalidOperationException("Legacy preferences are incompatible.");
             SetTheme("matrix");
@@ -903,14 +923,26 @@ namespace Neon
                 Left = point.X; Top = point.Y;
                 preferences.Left = Left; preferences.Top = Top;
             } finally { positioning = false; }
-            PositionSettingsWindow();
+            PositionCompanionWindows();
         }
-        private void PositionSettingsWindow()
+        private void PositionCompanionWindows()
         {
-            if (settingsWindow == null) return;
             var area = CurrentWorkArea();
-            var point = SettingsPosition(area, new Rect(Left, Top, ActualWidth > 0 ? ActualWidth : PanelWidth, ActualHeight), new Size(settingsWindow.ActualWidth > 0 ? settingsWindow.ActualWidth : settingsWindow.Width, settingsWindow.ActualHeight > 0 ? settingsWindow.ActualHeight : settingsWindow.Height));
-            settingsWindow.Left = point.X; settingsWindow.Top = point.Y;
+            var widgetWidth = ActualWidth > 0 ? ActualWidth : PanelWidth;
+            var widgetHeight = ActualHeight > 0 ? ActualHeight : viewport.DesiredSize.Height;
+            if (speedTestWindow != null)
+            {
+                speedTestWindow.MaxWidth = area.Width; speedTestWindow.MaxHeight = area.Height;
+                speedTestWindow.Width = Math.Min(widgetWidth, area.Width);
+                speedTestWindow.Height = Math.Min(widgetHeight, area.Height);
+            }
+            foreach (Window companion in new Window[] { settingsWindow, speedTestWindow })
+            {
+                if (companion == null) continue;
+                var point = SettingsPosition(area, new Rect(Left, Top, widgetWidth, widgetHeight),
+                    new Size(companion.ActualWidth > 0 ? companion.ActualWidth : companion.Width, companion.ActualHeight > 0 ? companion.ActualHeight : companion.Height));
+                companion.Left = point.X; companion.Top = point.Y;
+            }
         }
         internal static Point SettingsPosition(Rect area, Rect widget, Size dialog)
         {

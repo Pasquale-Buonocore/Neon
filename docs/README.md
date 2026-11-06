@@ -9,6 +9,7 @@ This folder is the documentation home for NEON. Start with the page that matches
 | [Development and verification](development.md) | Build commands, test modes, generated artifacts, and manual checks |
 | [Architecture](architecture.md) | Runtime flow, component responsibilities, source files, and tests |
 | [Roadmap](roadmap.md) | Current boundaries and proposed work |
+| [Speed test feasibility](speedtest-feasibility.md) | Engine choice and live verification of the M-Lab speed test |
 
 For installation, download or clone the repository to a writable folder on 64-bit Windows 10/11 and run `Start.cmd` from the repository root. The root `README.md` gives the shortest introduction; the [user guide](user-guide.md) has the full instructions.
 

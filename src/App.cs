@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows;
@@ -14,6 +17,13 @@ namespace Neon
 {
     internal static class App
     {
+        private sealed class CancelSpeedProgress : IProgress<SpeedTestProgress>
+        {
+            private readonly CancellationTokenSource source;
+            private readonly string phase;
+            internal CancelSpeedProgress(CancellationTokenSource source, string phase) { this.source = source; this.phase = phase; }
+            public void Report(SpeedTestProgress value) { if (value.Phase == phase && (phase == "finding" || value.Bytes > 0)) source.Cancel(); }
+        }
         [STAThread]
         public static int Main(string[] args)
         {
@@ -23,6 +33,55 @@ namespace Neon
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
                 if (args.Length >= 2 && args[0] == "--process-test") { File.WriteAllText(args[1], ProcessTests.Run()); return 0; }
+                if (args.Length >= 1 && args[0] == "--process-worker")
+                {
+                    var memory = new byte[32 * 1024 * 1024];
+                    for (int i = 0; i < memory.Length; i += 4096) memory[i] = 1;
+                    var clock = Stopwatch.StartNew(); double work = 0;
+                    while (clock.Elapsed < TimeSpan.FromSeconds(6)) work += Math.Sqrt(clock.ElapsedTicks % 100000 + 1);
+                    GC.KeepAlive(memory); GC.KeepAlive(work); return 0;
+                }
+                if (args.Length >= 2 && args[0] == "--speed-test")
+                {
+                    var result = new MlabSpeedTest().RunAsync(new Progress<SpeedTestProgress>(), CancellationToken.None).GetAwaiter().GetResult();
+                    File.WriteAllText(args[1], new JavaScriptSerializer().Serialize(result)); return 0;
+                }
+                if (args.Length >= 3 && args[0] == "--speed-cancel-test")
+                {
+                    using (var stop = new CancellationTokenSource())
+                    {
+                        try { new MlabSpeedTest().RunAsync(new CancelSpeedProgress(stop, args[2]), stop.Token).GetAwaiter().GetResult(); }
+                        catch (OperationCanceledException) { File.WriteAllText(args[1], "Canceled during " + args[2]); return 0; }
+                        throw new InvalidOperationException("The speed test did not stop during " + args[2] + ".");
+                    }
+                }
+                if (args.Length >= 3 && args[0] == "--speed-failure-test")
+                {
+                    if (args[2] != "offline" && args[2] != "timeout") throw new ArgumentException("Unknown speed failure test.");
+                    var listener = new TcpListener(IPAddress.Loopback, 0);
+                    listener.Start();
+                    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                    if (args[2] == "offline") listener.Stop();
+                    try
+                    {
+                        new MlabSpeedTest("http://127.0.0.1:" + port + "/ndt7").RunAsync(new Progress<SpeedTestProgress>(), CancellationToken.None).GetAwaiter().GetResult();
+                        throw new InvalidOperationException("The failed discovery produced a successful speed result.");
+                    }
+                    catch (WebException) { if (args[2] != "offline") throw; File.WriteAllText(args[1], "Offline discovery failed clearly"); return 0; }
+                    catch (TimeoutException) { if (args[2] != "timeout") throw; File.WriteAllText(args[1], "Discovery timed out clearly"); return 0; }
+                    finally { listener.Stop(); }
+                }
+                if (args.Length >= 2 && args[0] == "--speed-preview")
+                {
+                    var previewApp = new Application();
+                    var monitor = new MonitorWindow(true);
+                    monitor.Visual.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                    var speedWindow = new SpeedTestWindow(monitor.CurrentPreferences);
+                    speedWindow.Width = monitor.Visual.DesiredSize.Width;
+                    speedWindow.Height = monitor.Visual.DesiredSize.Height;
+                    speedWindow.Visual.Width = speedWindow.Width; speedWindow.Visual.Height = speedWindow.Height;
+                    SaveBitmap(RenderElement(speedWindow.Visual), args[1]); speedWindow.Close(); monitor.Close(); previewApp.Shutdown(); return 0;
+                }
                 if (args.Length >= 2 && args[0] == "--settings-test")
                 {
                     var settingsApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -51,10 +110,12 @@ namespace Neon
                 if (args.Length >= 2 && args[0] == "--icon-preview") { SaveBitmap(BrandIcon.Window(128), args[1]); return 0; }
                 if (args.Length >= 2 && args[0] == "--ui-test")
                 {
+                    Assert(SpeedTestWindow.FailureMessage(new WebException("DNS", WebExceptionStatus.NameResolutionFailure), "finding", false).Contains("No measurement was obtained"), "DNS failure has no partial result");
+                    Assert(!SpeedTestWindow.FailureMessage(new WebException("DNS", WebExceptionStatus.NameResolutionFailure), "finding", false).Contains("partial"), "DNS failure is not labeled partial");
                     var testApp = new Application(); var testWindow = new MonitorWindow(true);
                     testWindow.ShowActivated = false; testWindow.Left = -32000; testWindow.Top = -32000;
                     testWindow.Show(); testWindow.UpdateLayout();
-                    testWindow.VerifyInterface(); testWindow.Close(); testApp.Shutdown();
+                    testWindow.VerifyInterface(); SpeedWindowTests.Run(); testWindow.Close(); testApp.Shutdown();
                     File.WriteAllText(args[1], "UI OK: half-desktop height, small-screen fit, tab navigation, desktop placement, transparency, missing sensors, alerts, multiple/unavailable/removed drives, six themes and preferences. Final size: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
                     return 0;
                 }
@@ -95,6 +156,8 @@ namespace Neon
             Assert(rates.Sample(new Dictionary<string, long[]> { { "a", new long[] { 1, 1 } }, { "b", new long[] { 999999, 999999 } } }, 4)[0] == 0, "Network: reset and new interface");
             Assert(rates.Sample(new Dictionary<string, long[]>(), 5)[0] == 0, "Network: disconnection");
             Assert(MonitorWindow.Speed(1048576).EndsWith("MiB/s"), "Binary network units");
+            Assert(Math.Abs((MlabSpeedTest.ParseLatency("{\"TCPInfo\":{\"MinRTT\":7452}}") ?? 0) - 7.452) < 0.001, "NDT7 RTT microseconds to milliseconds");
+            Assert(!MlabSpeedTest.ParseLatency("{\"TCPInfo\":{}}").HasValue, "Missing NDT7 RTT stays unavailable");
             using (var icon = BrandIcon.Tray()) Assert(icon.Width == 16 && icon.Height == 16, "16-pixel notification-area icon");
             Assert(BrandIcon.Window(128).PixelWidth == 128, "Embedded high-resolution icon");
             var reader = new Telemetry(); reader.Read(); Thread.Sleep(1100); var sample = reader.Read();

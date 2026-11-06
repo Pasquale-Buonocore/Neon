@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') -ExecutableName $ExecutableName
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-foreach ($mode in @('self-test', 'process-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview')) {
+foreach ($mode in @('self-test', 'process-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview', 'speed-preview')) {
     $filename = switch ($mode) {
         'self-test' { 'verification.json' }
         'process-test' { 'process-verification.txt' }
@@ -17,6 +17,7 @@ foreach ($mode in @('self-test', 'process-test', 'ui-test', 'desktop-test', 'set
         'menu-preview' { 'neon-menu.png' }
         'icon-preview' { 'neon-icon.png' }
         'settings-preview' { 'neon-settings.png' }
+        'speed-preview' { 'neon-speed-test.png' }
     }
     $resultPath = Join-Path $artifactRoot $filename
     $process = Start-Process -FilePath (Join-Path $projectRoot "bin\$ExecutableName") -ArgumentList "--$mode", ('"' + $resultPath + '"') -WindowStyle Hidden -Wait -PassThru
