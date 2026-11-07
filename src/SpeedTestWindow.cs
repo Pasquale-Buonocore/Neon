@@ -46,7 +46,7 @@ namespace Neon
             WindowStartupLocation = WindowStartupLocation.Manual;
             ShowInTaskbar = false; ShowActivated = false; Topmost = false; UseLayoutRounding = true;
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
-            ResizeMode = ResizeMode.CanResizeWithGrip; FontFamily = new FontFamily("Segoe UI"); FontSize = 11;
+            ResizeMode = ResizeMode.NoResize; FontFamily = new FontFamily("Segoe UI"); FontSize = 11;
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             SourceInitialized += delegate { desktopLayer = new DesktopLayer(this); };
             IsVisibleChanged += delegate { KeepOnDesktop(); };

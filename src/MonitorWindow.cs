@@ -253,7 +253,7 @@ namespace Neon
             storageContent.VerticalAlignment = VerticalAlignment.Top;
             views.Children.Add(processesContent); views.Children.Add(storageContent);
             UpdateTabs();
-            shell.ContextMenu = CreateOptions();
+            RefreshOptions();
         }
 
         private FrameworkElement Placeholder(string title, string description)
@@ -336,7 +336,7 @@ namespace Neon
                 if (index == 1) { latestProcesses = null; RenderProcesses(); }
             }
             selectedTab = index; UpdateTabs(); UpdateViewportWidth();
-            shell.ContextMenu = CreateOptions();
+            RefreshOptions();
             if (IsLoaded) { UpdateLayout(); RestorePosition(); }
             if (index == 1 && previous != 1 && !preview) RefreshProcesses(true);
         }
@@ -506,7 +506,7 @@ namespace Neon
         }
         private ContextMenu CreateMenuChrome()
         {
-            var menu = new ContextMenu();
+            var menu = new ContextMenu { StaysOpen = false };
             using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("Neon.MenuStyles"))
                 menu.Resources = (ResourceDictionary)XamlReader.Load(stream);
             menu.Resources["SurfaceColor"] = Surface; menu.Resources["TextColor"] = White; menu.Resources["LineColor"] = Line;
@@ -532,15 +532,25 @@ namespace Neon
             var item = new MenuItem { Header = text, IsCheckable = checkable, IsChecked = selected };
             item.Click += delegate { action(); }; return item;
         }
+        private void CloseOptions()
+        {
+            if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false;
+        }
+        private void RefreshOptions()
+        {
+            CloseOptions();
+            shell.ContextMenu = CreateOptions();
+        }
         private void OpenOptions()
         {
-            shell.ContextMenu = CreateOptions();
+            RefreshOptions();
             shell.ContextMenu.PlacementTarget = shell;
             shell.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
             shell.ContextMenu.IsOpen = true; shell.ContextMenu.Focus();
         }
         private void OpenSpeedTest()
         {
+            CloseOptions();
             if (!preview && !IsVisible) Reveal();
             if (speedTestWindow != null) { speedTestWindow.KeepOnDesktop(); return; }
             if (settingsWindow != null) settingsWindow.Close();
@@ -589,12 +599,13 @@ namespace Neon
             UpdateTabs();
             UpdateProcessSortButtons();
             UpdateViewportWidth();
-            shell.ContextMenu = CreateOptions();
+            RefreshOptions();
             if (desktopLayer != null) desktopLayer.KeepBehind();
         }
         public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); if (settingsWindow != null) settingsWindow.SyncSavedPreferences(preferences); }
         private void OpenSettings()
         {
+            CloseOptions();
             if (!preview && !IsVisible) Reveal();
             if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.RefreshStartupState(); settingsWindow.KeepOnDesktop(); return; }
             if (speedTestWindow != null) speedTestWindow.Close();
@@ -602,11 +613,8 @@ namespace Neon
                 preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration());
             var area = CurrentWorkArea();
             settingsWindow.WindowStartupLocation = WindowStartupLocation.Manual;
-            settingsWindow.MinWidth = Math.Min(settingsWindow.MinWidth, area.Width);
-            settingsWindow.MinHeight = Math.Min(settingsWindow.MinHeight, Math.Max(200, area.Height - 24));
-            settingsWindow.MaxWidth = area.Width; settingsWindow.MaxHeight = Math.Max(200, area.Height - 24);
-            settingsWindow.Width = Math.Min(settingsWindow.Width, area.Width);
-            settingsWindow.Height = Math.Min(settingsWindow.Height, settingsWindow.MaxHeight);
+            settingsWindow.MinWidth = 100; settingsWindow.MinHeight = 100;
+            settingsWindow.MaxWidth = area.Width; settingsWindow.MaxHeight = area.Height;
             PositionCompanionWindows();
             if (preview) { settingsWindow.ShowActivated = false; settingsWindow.ShowInTaskbar = false; settingsWindow.Left = settingsWindow.Top = -32000; }
             settingsWindow.Closed += delegate { settingsWindow = null; };
@@ -758,6 +766,7 @@ namespace Neon
             if (restored.Theme != preferences.Theme) throw new InvalidOperationException("The theme was not preserved in preferences.");
             SetTheme("unknown-theme"); if (preferences.Theme != "matrix") throw new InvalidOperationException("An unknown theme has no fallback.");
             var options = CreateOptions();
+            if (options.StaysOpen) throw new InvalidOperationException("The widget menu must close when clicking outside it.");
             options.ApplyTemplate(); options.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             var themes = options.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "themes");
             var cyberpunk = themes.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Tag) == "cyberpunk");
@@ -930,15 +939,12 @@ namespace Neon
             var area = CurrentWorkArea();
             var widgetWidth = ActualWidth > 0 ? ActualWidth : PanelWidth;
             var widgetHeight = ActualHeight > 0 ? ActualHeight : viewport.DesiredSize.Height;
-            if (speedTestWindow != null)
-            {
-                speedTestWindow.MaxWidth = area.Width; speedTestWindow.MaxHeight = area.Height;
-                speedTestWindow.Width = Math.Min(widgetWidth, area.Width);
-                speedTestWindow.Height = Math.Min(widgetHeight, area.Height);
-            }
             foreach (Window companion in new Window[] { settingsWindow, speedTestWindow })
             {
                 if (companion == null) continue;
+                companion.MaxWidth = area.Width; companion.MaxHeight = area.Height;
+                companion.Width = Math.Min(widgetWidth, area.Width);
+                companion.Height = Math.Min(widgetHeight, area.Height);
                 var point = SettingsPosition(area, new Rect(Left, Top, widgetWidth, widgetHeight),
                     new Size(companion.ActualWidth > 0 ? companion.ActualWidth : companion.Width, companion.ActualHeight > 0 ? companion.ActualHeight : companion.Height));
                 companion.Left = point.X; companion.Top = point.Y;

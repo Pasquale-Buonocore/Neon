@@ -23,9 +23,13 @@ namespace Neon
             try
             {
                 monitor.SetTheme("ice");
+                var options = ((Border)((Viewbox)monitor.Visual).Child).ContextMenu;
+                options.IsOpen = true;
                 Open(monitor, "OpenSpeedTest");
+                Check(!options.IsOpen, "opening Speed Test closes the widget menu");
                 var speed = Application.Current.Windows.OfType<SpeedTestWindow>().Single(w => w.IsVisible);
-                Check(Math.Abs(speed.Width - monitor.ActualWidth) < 1 && Math.Abs(speed.Height - monitor.ActualHeight) < 1 && speed.WindowStyle == WindowStyle.None &&
+                Check(Math.Abs(speed.Width - monitor.ActualWidth) < 1 && Math.Abs(speed.Height - monitor.ActualHeight) < 1 &&
+                    speed.ResizeMode == ResizeMode.NoResize && speed.WindowStyle == WindowStyle.None &&
                     speed.AllowsTransparency && !speed.ShowInTaskbar && !speed.ShowActivated,
                     "companion size, frame, and taskbar state: " + speed.Width + "x" + speed.Height +
                     ", style=" + speed.WindowStyle + ", transparency=" + speed.AllowsTransparency +
@@ -40,7 +44,10 @@ namespace Neon
                     "companion follows widget resize");
                 Open(monitor, "OpenSpeedTest");
                 Check(Application.Current.Windows.OfType<SpeedTestWindow>().Count(w => w.IsVisible) == 1, "only one speed window opens");
+                options = ((Border)((Viewbox)monitor.Visual).Child).ContextMenu;
+                options.IsOpen = true;
                 Open(monitor, "OpenSettings");
+                Check(!options.IsOpen, "opening Personalize closes the widget menu");
                 Check(!speed.IsVisible && Application.Current.Windows.OfType<SettingsWindow>().Count(w => w.IsVisible) == 1,
                     "Personalize replaces Speed Test");
                 Open(monitor, "OpenSpeedTest");

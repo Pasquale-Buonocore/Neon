@@ -59,6 +59,7 @@ namespace Neon
                 wanted.RefreshSeconds = 5; Assert(PreferencesStore.Save(path, wanted) && PreferencesStore.Load(path).RefreshSeconds == 5, "atomic replacement");
                 Assert(!PreferencesStore.Save(temporary, wanted), "unwritable destination reported without crashing");
                 Assert(Directory.GetFiles(temporary, "*.tmp").Length == 0, "temporary writes cleaned up");
+                VerifyCompactLayout();
                 VerifyLiveApplication();
                 StartupTests.Run();
                 return "Settings OK: defaults, legacy migration, corrupt/null settings, validation, atomic save/reload, save failure, live application, independent typography, interval, docking, single display mode, shared controls, personalization menu, immediate placement under mouse capture, stable screen-coordinate slider dragging, and Windows startup registration, approval, Save/Cancel/Reset and rollback.";
@@ -67,6 +68,20 @@ namespace Neon
             {
                 if (temporary.StartsWith(parent.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) Directory.Delete(temporary, true);
             }
+        }
+        private static void VerifyCompactLayout()
+        {
+            var window = new SettingsWindow(new Preferences(), delegate { return true; })
+            { Width = 330, Height = 408, Left = -32000, Top = -32000, ShowActivated = false };
+            window.Show();
+            try
+            {
+                window.UpdateLayout();
+                var form = FindControl<ScrollViewer>(window.Visual);
+                Assert(form != null && form.ScrollableHeight <= 1 && form.ComputedVerticalScrollBarVisibility != Visibility.Visible,
+                    "standard personalization content fits the widget without a scrollbar");
+            }
+            finally { window.Close(); }
         }
         private static void VerifyLiveApplication()
         {
@@ -93,6 +108,8 @@ namespace Neon
                 var firstSettings = Application.Current.Windows.OfType<SettingsWindow>().Single(w => w.IsVisible);
                 entry.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Assert(Application.Current.Windows.OfType<SettingsWindow>().Count(w => w.IsVisible) == 1 && firstSettings.IsVisible, "settings menu opens one reusable window");
+                Assert(Math.Abs(firstSettings.Width - monitor.ActualWidth) <= 1 && Math.Abs(firstSettings.Height - monitor.ActualHeight) <= 1,
+                    "personalization opens at the widget's dimensions");
                 Assert(!monitor.Topmost && !monitor.ShowActivated && !firstSettings.Topmost && !firstSettings.ShowActivated && !firstSettings.ShowInTaskbar, "personalization remains on the desktop without a taskbar entry");
                 Assert(Convert.ToString(entry.Header) == "Personalize…", "personalization menu label");
                 firstSettings.UpdateLayout();
@@ -102,6 +119,8 @@ namespace Neon
                 {
                     sizeSlider.Value = 150;
                     Assert(Mouse.Captured == sizeSlider, "capture retained while resizing");
+                    Assert(Math.Abs(firstSettings.Width - monitor.ActualWidth) <= 1 && Math.Abs(firstSettings.Height - monitor.ActualHeight) <= 1,
+                        "personalization matches the widget during live resize");
                     Assert(Math.Abs(firstSettings.Left + firstSettings.Width + 8 - monitor.Left) <= 1, "personalization follows resize before mouse release");
                     sizeSlider.BeginScreenDrag(500, 180);
                     sizeSlider.ContinueScreenDrag(470);

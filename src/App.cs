@@ -89,9 +89,15 @@ namespace Neon
                 }
                 if (args.Length >= 2 && args[0] == "--settings-preview")
                 {
-                    var settingsApp = new Application(); var settings = new SettingsWindow(new Preferences(), delegate { return true; });
+                    var settingsApp = new Application();
+                    var monitor = new MonitorWindow(true);
+                    monitor.Visual.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                    var settings = new SettingsWindow(monitor.CurrentPreferences, delegate { return true; });
+                    settings.MinWidth = 100; settings.MinHeight = 100;
+                    settings.Width = monitor.Visual.DesiredSize.Width;
+                    settings.Height = monitor.Visual.DesiredSize.Height;
                     settings.Visual.Width = settings.Width; settings.Visual.Height = settings.Height;
-                    SaveBitmap(RenderElement(settings.Visual), args[1]); settings.Close(); settingsApp.Shutdown(); return 0;
+                    SaveBitmap(RenderElement(settings.Visual), args[1]); settings.Close(); monitor.Close(); settingsApp.Shutdown(); return 0;
                 }
                 if (args.Length >= 2 && args[0] == "--desktop-test")
                 {

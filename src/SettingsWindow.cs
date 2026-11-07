@@ -59,7 +59,7 @@ namespace Neon
             Closing += delegate { if (!accepted) apply(saved.Copy()); };
             PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { Close(); e.Handled = true; } };
             var layout = new DockPanel(); frame.Child = layout;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 9) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
             var close = Button("×", delegate { Close(); }); close.ToolTip = "Close personalization";
             close.Style = (Style)Resources["NeonIconButton"]; close.VerticalAlignment = VerticalAlignment.Top;
             DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
@@ -68,8 +68,8 @@ namespace Neon
             header.Children.Add(heading);
             heading.MouseLeftButtonDown += delegate { if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); };
             DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
-            var footer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-            status = Label("Live preview · Save to keep changes.", 10, "#9FBAAB"); status.MinHeight = 20; footer.Children.Add(status);
+            var footer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            status = Label("Live preview · Save to keep changes.", 10, "#9FBAAB"); status.MinHeight = 18; footer.Children.Add(status);
             var buttons = new Grid(); buttons.ColumnDefinitions.Add(new ColumnDefinition()); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var reset = Button("Reset", delegate { LoadValues(new Preferences()); launchAtLogin.IsChecked = false; PreviewDraft(); }); reset.Width = 60; reset.HorizontalAlignment = HorizontalAlignment.Left; buttons.Children.Add(reset);
             var applyButton = Button("Cancel", delegate { Close(); }); applyButton.Width = 60; Grid.SetColumn(applyButton, 1); applyButton.Margin = new Thickness(8, 0, 0, 0); buttons.Children.Add(applyButton);
@@ -77,13 +77,13 @@ namespace Neon
             footer.Children.Add(buttons); DockPanel.SetDock(footer, Dock.Bottom); layout.Children.Add(footer);
             var form = new StackPanel();
 
-            var themeLabel = Label("COLOR THEME", 9, "#E6F3EC"); themeLabel.Margin = new Thickness(0, 0, 0, 5); form.Children.Add(themeLabel);
+            var themeLabel = Label("COLOR THEME", 9, "#E6F3EC"); themeLabel.Margin = new Thickness(0, 0, 0, 3); form.Children.Add(themeLabel);
             var paletteGrid = new Grid(); for (int i = 0; i < 3; i++) paletteGrid.ColumnDefinitions.Add(new ColumnDefinition());
             paletteGrid.RowDefinitions.Add(new RowDefinition()); paletteGrid.RowDefinitions.Add(new RowDefinition());
             for (int i = 0; i < ThemePalette.All.Length; i++)
             {
                 var palette = ThemePalette.All[i]; string id = palette.Id;
-                var button = Button("", delegate { draft.Theme = id; PreviewDraft(); }); button.Margin = new Thickness(i % 3 == 0 ? 0 : 5, 0, 0, 5);
+                var button = Button("", delegate { draft.Theme = id; PreviewDraft(); }); button.Margin = new Thickness(i % 3 == 0 ? 0 : 5, 0, 0, 3);
                 var content = new StackPanel { Orientation = Orientation.Horizontal };
                 content.Children.Add(new Border { Width = 9, Height = 9, CornerRadius = new CornerRadius(3), Background = Color(palette.Primary), Margin = new Thickness(0, 0, 4, 0) });
                 content.Children.Add(Label(palette.Name.Split('·')[0].Trim(), 11, "#E6F3EC")); button.Content = content;
@@ -93,14 +93,12 @@ namespace Neon
             widgetSize = Setting(form, "Widget size", "Relative to the current default widget size.", 60, 150, 5, "%");
             fontSize = Setting(form, "Text size", "Adjust the widget's typography independently.", 80, 140, 5, "%");
             opacity = Setting(form, "Background opacity", "0% is transparent. Text and charts remain visible.", 0, 95, 5, "%");
-            var monitorTitle = Label("MONITORING", 10, "#9FBAAB"); monitorTitle.Margin = new Thickness(0, 6, 0, 0); form.Children.Add(monitorTitle);
             refresh = Setting(form, "Refresh interval", "Temperature providers refresh at most once every 5 seconds.", 0.5, 10, 0.5, " s");
-            var startupTitle = Label("STARTUP", 10, "#9FBAAB"); startupTitle.Margin = new Thickness(0, 10, 0, 5); form.Children.Add(startupTitle);
-            launchAtLogin = new CheckBox { Content = "Launch at Windows login", Margin = new Thickness(0, 0, 0, 4) };
+            launchAtLogin = new CheckBox { Content = "Launch at Windows login", Margin = new Thickness(0, 6, 0, 0) };
             launchAtLogin.SetResourceReference(Control.ForegroundProperty, "SettingsText");
             launchAtLogin.Checked += StartupSelectionChanged; launchAtLogin.Unchecked += StartupSelectionChanged;
-            form.Children.Add(launchAtLogin); form.Children.Add(Label("Changes apply when you save.", 10, "#9FBAAB"));
-            startupStatus = Label("", 10, "#9FBAAB"); startupStatus.Margin = new Thickness(0, 4, 0, 4); form.Children.Add(startupStatus);
+            form.Children.Add(launchAtLogin);
+            startupStatus = Label("", 10, "#9FBAAB"); startupStatus.Margin = new Thickness(0, 2, 0, 0); form.Children.Add(startupStatus);
             windowsStartup = Button("Open Windows startup settings", delegate
             {
                 try { Process.Start(new ProcessStartInfo("ms-settings:startupapps") { UseShellExecute = true }); }
@@ -134,7 +132,7 @@ namespace Neon
         { var button = new Button { Content = text }; button.Click += delegate { action(); }; return button; }
         private Slider Setting(Panel parent, string title, string hint, double min, double max, double step, string suffix)
         {
-            var section = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+            var section = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
             var row = new DockPanel(); var value = Label("", 11, "#70FFA7"); DockPanel.SetDock(value, Dock.Right); row.Children.Add(value); row.Children.Add(Label(title, 11, "#E6F3EC")); section.Children.Add(row);
             var slider = new DesktopSlider { Minimum = min, Maximum = max, TickFrequency = step, SmallChange = step, LargeChange = step * 2, IsSnapToTickEnabled = true, IsMoveToPointEnabled = true };
             slider.ValueChanged += delegate { value.Text = slider.Value.ToString("0.#") + suffix; PreviewDraft(); };
