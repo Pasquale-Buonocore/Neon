@@ -43,7 +43,7 @@ Choose **Internet speed test…** from that menu for an on-demand M-Lab test. It
 
 ## Personalize
 
-Open **gear → Personalize…**. The settings window appears beside the widget at the same size, follows its resizing, and remains at desktop level. Its compact form fits the standard widget without a scrollbar. Opening it again reuses the existing window. Controls preview their changes immediately, including while resizing. Click **Save** to persist changes; **Cancel**, ×, or Esc restores the saved settings. **Reset** previews the defaults until you save.
+Open **gear → Personalize…**. The settings window appears beside the widget at the same size, follows its resizing, and remains at desktop level. It cannot be resized manually; its dimensions follow the widget. Its compact form fits the standard widget without a scrollbar. Opening it again reuses the existing window. Controls preview their changes immediately, including while resizing. Click **Save** to persist changes; **Cancel**, ×, or Esc restores the saved settings. **Reset** previews the defaults until you save.
 
 | Setting | Range or behavior |
 | --- | --- |

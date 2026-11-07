@@ -50,6 +50,9 @@ namespace Neon
                 Check(!options.IsOpen, "opening Personalize closes the widget menu");
                 Check(!speed.IsVisible && Application.Current.Windows.OfType<SettingsWindow>().Count(w => w.IsVisible) == 1,
                     "Personalize replaces Speed Test");
+                var settings = Application.Current.Windows.OfType<SettingsWindow>().Single(w => w.IsVisible);
+                Check(settings.ResizeMode == ResizeMode.NoResize && Math.Abs(settings.Width - monitor.ActualWidth) < 1 &&
+                    Math.Abs(settings.Height - monitor.ActualHeight) < 1, "Personalize has fixed size matching the widget");
                 Open(monitor, "OpenSpeedTest");
                 Check(Application.Current.Windows.OfType<SettingsWindow>().All(w => !w.IsVisible) &&
                     Application.Current.Windows.OfType<SpeedTestWindow>().Count(w => w.IsVisible) == 1,

@@ -47,7 +47,7 @@ namespace Neon
             IsVisibleChanged += delegate { KeepOnDesktop(); };
             Closed += delegate { if (desktopLayer != null) desktopLayer.Dispose(); };
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
-            ResizeMode = ResizeMode.CanResizeWithGrip; FontFamily = new FontFamily("Segoe UI"); FontSize = 11;
+            ResizeMode = ResizeMode.NoResize; FontFamily = new FontFamily("Segoe UI"); FontSize = 11;
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Neon.SettingsStyles"))
                 Resources = (ResourceDictionary)XamlReader.Load(stream);
             Resources.MergedDictionaries.Add(ControlStyles.Load());

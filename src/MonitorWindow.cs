@@ -70,7 +70,7 @@ namespace Neon
 
     public sealed class MonitorWindow : Window
     {
-        public const double PanelWidth = 350;
+        public const double PanelWidth = 332;
         private readonly SolidColorBrush Green = Brush("#70FFA7"), White = Brush("#E3FFED"), Muted = Brush("#8AB49C"), Amber = Brush("#FFC66D"), Cyan = Brush("#73DDEB");
         private readonly SolidColorBrush Line = Brush("#41634E"), Surface = Brush("#050E0A");
         private readonly List<Border> panels = new List<Border>();
