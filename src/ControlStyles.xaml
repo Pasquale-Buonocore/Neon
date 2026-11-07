@@ -5,11 +5,12 @@
     <Setter Property="BorderBrush" Value="{DynamicResource ControlLine}"/>
     <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8,5"/>
     <Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="11"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="MinHeight" Value="26"/><Setter Property="Cursor" Value="Hand"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
       <Border x:Name="Frame" CornerRadius="5" BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
       </Border>
       <ControlTemplate.Triggers>
         <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource ControlAccent}"/><Setter Property="Foreground" Value="{DynamicResource ControlAccent}"/></Trigger>

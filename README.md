@@ -15,7 +15,7 @@ NEON is a desktop widget for 64-bit Windows 10/11. It stays behind your applicat
 
 ## Use NEON
 
-- Choose **Monitor**, **Processes**, or **Storage** from the tab row or **Tabs** menu. Monitor shows live system readings; Processes shows the top eight processes, sortable by CPU or memory. Storage is currently a placeholder for a future view.
+- Choose **Monitor**, **Processes**, or **Storage** from the tab row or **Tabs** menu. Monitor shows live system readings; Processes shows the top eight processes, sortable by CPU or memory. Storage lists local fixed volumes and scans a selected volume only when you click **Start scan**.
 - Drag **NEON / SYS** to move the widget. Use the **gear → Personalize…** menu to change size, text, theme, opacity, refresh interval, and Windows login startup. Click **Save** to keep changes or **Cancel** to discard them.
 - Click **−** to hide the widget and double-click its notification-area icon to show it again. Click **×** or choose **Quit NEON** to exit.
 - `N/A` means a reading is unavailable. CPU temperature may require a supported external sensor provider; see the [user guide](docs/user-guide.md#temperatures-and-gpu-sensors).

@@ -11,10 +11,13 @@ flowchart LR
     P --> Q[Process snapshot]
     S --> W
     Q --> W
-    W --> UI[Monitor and Processes views]
+    W -->|manual Storage scan| C[StorageScanner]
+    C --> R[In-memory folder tree, top 50 per level]
+    R --> W
+    W --> UI[Monitor, Processes, and Storage views]
 ```
 
-At normal startup, `src/App.cs` establishes the single-instance mutex and reveal event, creates the WPF application, and opens `MonitorWindow`. Test and preview command-line modes branch before the normal UI startup. `MonitorWindow` owns the tabs, view layout, status, charts, menus, refresh timer, settings window, docking, and tray interactions. It calls `Telemetry.Read()` on a background task and applies its snapshot on the UI thread. Process sampling runs on a background task while Processes is selected; Monitor chart samples continue when another tab is visible. Storage has a tab entry and placeholder view only.
+At normal startup, `src/App.cs` establishes the single-instance mutex and reveal event, creates the WPF application, and opens `MonitorWindow`. Test and preview command-line modes branch before the normal UI startup. `MonitorWindow` owns the tabs, view layout, status, charts, menus, refresh timer, companion windows, docking, and tray interactions. It calls `Telemetry.Read()` on a background task and applies its snapshot on the UI thread. Process sampling runs on a background task while Processes is selected; Monitor chart samples continue when another tab is visible. Storage volume discovery and the manually started scan run on background tasks; the scan result remains in memory for the session.
 
 ## Component map
 
@@ -26,6 +29,8 @@ Paths below are repository-relative names for finding code from the cloned repos
 | WPF widget, tabs, charts, alerts, menus, refresh, settings orchestration | `src/MonitorWindow.cs` | UI test mode in `src/MonitorWindow.cs`; `tests/verify.ps1` |
 | CPU, RAM, network, fixed volumes, GPU and temperature providers; snapshot data | `src/Telemetry.cs` | Self-test mode in `src/App.cs`; `tests/verify.ps1` |
 | Per-process collection, CPU deltas, PID reuse handling, ranking | `src/ProcessTelemetry.cs` | `tests/ProcessTests.cs` |
+| Local fixed-volume discovery, media identification, iterative scan, ranking, app-name lookup | `src/StorageTelemetry.cs` | `tests/StorageTests.cs` |
+| Paged Storage companion window with mixed file/folder navigation | `src/StorageDetailsWindow.cs` | Storage UI checks and `storage-preview` in `tests/verify.ps1` |
 | On-demand M-Lab download/upload test and companion tachometer window | `src/MlabSpeedTest.cs`, `src/SpeedTestWindow.cs`, `src/SpeedGauge.cs` | Manual `--speed-test` mode, `speed-preview`, and UI companion checks in `tests/verify.ps1` |
 | Preferences, defaults, normalization, atomic JSON persistence | `src/Preferences.cs` | `tests/SettingsTests.cs` |
 | Personalize window and live preview | `src/SettingsWindow.cs`, `src/DesktopSlider.cs` | `tests/SettingsTests.cs` and UI test mode |

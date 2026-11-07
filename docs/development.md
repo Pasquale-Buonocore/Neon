@@ -23,7 +23,7 @@ Close NEON before rebuilding the normal executable. Build outputs, logs, local s
 
 ## Automated checks
 
-`tests/verify.ps1` builds the executable, runs its test and preview modes, and checks that each output exists under `artifacts/`. The modes include system telemetry, process sampling, UI/tab behavior, desktop ordering, settings/startup, and rendered previews.
+`tests/verify.ps1` builds the executable, runs its test and preview modes, and checks that each output exists under `artifacts/`. The modes include system telemetry, process sampling, Storage scanning, UI/tab behavior, desktop ordering, settings/startup, and rendered previews.
 
 - Telemetry checks cover CPU calculations, network rates with real intervals, counter resets, interface changes, memory, uptime, and all fixed drives.
 - Process checks cover first-sample `N/A`, normalization to total CPU capacity, sorting, process churn, PID reuse, inaccessible counters, session reset, and a real worker process sampled three times through launch and exit.
@@ -32,7 +32,11 @@ Close NEON before rebuilding the normal executable. Build outputs, logs, local s
 - Startup checks cover provisional changes, Save/Cancel/×/Esc/Reset, external changes, Windows blocks, failed registration and preference saves, and rollback failures. Tests use a temporary key under `HKCU\Software\NEON\Tests` and clean up their subtree. UI tests and previews use a simulated startup service; the normal suite does not change the real Windows startup registration.
 - Desktop checks create off-screen windows to verify ordering behind applications, clicks without activation, blocked topmost requests, showing from tray, and moving and minimizing.
 
-The suite generates `artifacts/neon-preview.png`, `neon-themes.png`, `neon-tabs.png`, `neon-menu.png`, `neon-icon.png`, `neon-settings.png`, and `neon-speed-test.png`. The Monitor part of the tab preview uses live readings; its Processes example is explicitly labeled illustrative. Synthetic process data is not used in normal operation. The speed-test preview never starts a network test.
+The suite generates `artifacts/neon-preview.png`, `neon-themes.png`, `neon-tabs.png`, `neon-menu.png`, `neon-icon.png`, `neon-settings.png`, `neon-speed-test.png`, `neon-storage-details.png`, and `neon-storage-tab.png`. The Monitor part of the tab preview uses live readings; its Processes and Storage examples are illustrative. Synthetic data is not used in normal operation. The speed-test preview never starts a network test.
+
+## Manual Storage check
+
+Open Storage and confirm that no scan starts until **Start scan** is clicked. Select each local fixed volume, including two partitions on one disk if available; compare used/free/total with Windows. Check SSD/HDD only where physical disk identity is unambiguous. Build a disposable tree with nested large and small files, spaces in paths, a hard link, a junction or symbolic link, and a directory inaccessible to the current user. Scan it on a disposable volume or inspect the corresponding paths in a volume scan. Verify that each Details level mixes only direct children in descending size order, retaining up to 50 of each type. Check page boundaries, last pages, zero-byte filtering, and full tooltip text for paths and exclusion counts. At minimum, standard, and maximum widget/text scales, verify no Storage or Details scrollbars and no clipped controls. Compare Monitor, Processes, and Storage dimensions before and after populating Storage; hidden views must not enlarge the widget. Try canceling a scan and navigating the retained partial result, removing or disconnecting an available volume, closing and reopening Details while scanning, and replacing Details with Personalize and Speed Test. Monitor should continue to update; navigation should not start another scan. Check size, placement, theme, opacity, and no taskbar icon for Details. Repeat on Windows 10 and 11 before closing issue #11.
 
 ## Manual Internet speed test check
 

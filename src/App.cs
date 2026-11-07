@@ -33,6 +33,22 @@ namespace Neon
             {
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
                 if (args.Length >= 2 && args[0] == "--process-test") { File.WriteAllText(args[1], ProcessTests.Run()); return 0; }
+                if (args.Length >= 2 && args[0] == "--storage-test") { File.WriteAllText(args[1], StorageTests.Run()); return 0; }
+                if (args.Length >= 2 && args[0] == "--storage-preview")
+                {
+                    var storageApp = new Application(); var storageWindow = new MonitorWindow(true);
+                    SaveBitmap(RenderElement(storageWindow.StorageDetailsPreview(args.Length > 2 ? (double?)Double.Parse(args[2], CultureInfo.InvariantCulture) : null,
+                        args.Length > 3 ? (double?)Double.Parse(args[3], CultureInfo.InvariantCulture) : null)), args[1]);
+                    storageWindow.Close(); storageApp.Shutdown(); return 0;
+                }
+                if (args.Length >= 2 && args[0] == "--storage-tab-preview")
+                {
+                    var storageApp = new Application(); var storageWindow = new MonitorWindow(true);
+                    storageWindow.StorageDetailsPreview(args.Length > 2 ? (double?)Double.Parse(args[2], CultureInfo.InvariantCulture) : null,
+                        args.Length > 3 ? (double?)Double.Parse(args[3], CultureInfo.InvariantCulture) : null);
+                    SaveBitmap(RenderElement(storageWindow.Visual), args[1]);
+                    storageWindow.Close(); storageApp.Shutdown(); return 0;
+                }
                 if (args.Length >= 1 && args[0] == "--process-worker")
                 {
                     var memory = new byte[32 * 1024 * 1024];
@@ -121,7 +137,7 @@ namespace Neon
                     var testApp = new Application(); var testWindow = new MonitorWindow(true);
                     testWindow.ShowActivated = false; testWindow.Left = -32000; testWindow.Top = -32000;
                     testWindow.Show(); testWindow.UpdateLayout();
-                    testWindow.VerifyInterface(); SpeedWindowTests.Run(); testWindow.Close(); testApp.Shutdown();
+                    testWindow.VerifyInterface(); testWindow.VerifyStorageInterface(); SpeedWindowTests.Run(); testWindow.Close(); testApp.Shutdown();
                     File.WriteAllText(args[1], "UI OK: half-desktop height, small-screen fit, tab navigation, desktop placement, transparency, missing sensors, alerts, multiple/unavailable/removed drives, six themes and preferences. Final size: " + testWindow.ActualWidth.ToString("0") + " x " + testWindow.ActualHeight.ToString("0"));
                     return 0;
                 }

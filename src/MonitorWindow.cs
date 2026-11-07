@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows;
@@ -87,6 +88,23 @@ namespace Neon
         private DesktopLayer desktopLayer;
         private SettingsWindow settingsWindow;
         private SpeedTestWindow speedTestWindow;
+        private StorageDetailsWindow storageDetailsWindow;
+        private readonly Dictionary<string, StorageScanResult> storageResults = new Dictionary<string, StorageScanResult>(StringComparer.OrdinalIgnoreCase);
+        private List<StorageVolume> storageVolumes = new List<StorageVolume>();
+        private StorageVolume selectedStorageVolume;
+        private CancellationTokenSource storageCancel;
+        private StorageProgress storageProgress;
+        private bool storageLoading;
+        private string storageCatalogError;
+        private StackPanel storageVolumeRows, storageTopRows;
+        private TextBlock storageExclusions, storageRootTitle, storagePageLabel;
+        private Border storageRowsArea;
+        private Button storagePrevious, storageNext;
+        private int storagePage;
+        private bool renderingStorage;
+        private TextBlock storageStatus, storageSummary;
+        private Button storageStart, storageStop, storageDetails, storageRefresh;
+        private ProgressBar storageIndicator;
         private double workAreaHeight = SystemParameters.WorkArea.Height, workAreaWidth = SystemParameters.WorkArea.Width;
         private Border shell;
         private Viewbox viewport;
@@ -143,7 +161,7 @@ namespace Neon
                 Loaded += async delegate { FitToDesktop(); UpdateLayout(); RestorePosition(); await Refresh(); timer.Start(); };
                 timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
                 timer.Tick += async delegate { if (selectedTab == 1) RefreshProcesses(); await Refresh(); };
-                Closing += delegate { shuttingDown = true; processSession++; timer.Stop(); if (settingsWindow != null) settingsWindow.Close(); if (speedTestWindow != null) speedTestWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
+                Closing += delegate { shuttingDown = true; processSession++; timer.Stop(); if (storageCancel != null) storageCancel.Cancel(); if (settingsWindow != null) settingsWindow.Close(); if (speedTestWindow != null) speedTestWindow.Close(); if (storageDetailsWindow != null) storageDetailsWindow.Close(); SavePreferences(); if (shell.ContextMenu != null) shell.ContextMenu.IsOpen = false; if (tray != null) tray.Dispose(); if (trayIcon != null) trayIcon.Dispose(); };
                 LocationChanged += delegate { if (IsLoaded && !positioning) { FitToDesktop(); if (dragging) { preferences.Left = Left; preferences.Top = Top; } PositionCompanionWindows(); } };
                 SizeChanged += delegate { QueuePosition(); };
             }
@@ -220,7 +238,7 @@ namespace Neon
                 Grid.SetColumn(button, i); tabs.Children.Add(button); tabButtons.Add(button);
             }
             body.Children.Add(tabs);
-            var views = new Grid(); body.Children.Add(views);
+            var views = new TabViewport(); body.Children.Add(views);
             monitorContent = new StackPanel(); views.Children.Add(monitorContent);
             var cards = new Grid();
             cards.ColumnDefinitions.Add(new ColumnDefinition()); cards.ColumnDefinitions.Add(new ColumnDefinition());
@@ -246,11 +264,9 @@ namespace Neon
             var storageBody = new StackPanel(); storagePanel.Child = storageBody; details.Children.Add(storagePanel);
             storageBody.Children.Add(SectionTitle("LOCAL DRIVES", "STORAGE"));
             diskList = new StackPanel();
-            storageBody.Children.Add(new ScrollViewer { Content = diskList, MaxHeight = 100, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+            storageBody.Children.Add(diskList);
             processesContent = CreateProcessView();
-            storageContent = Placeholder("02 / STORAGE", "SSD usage and the largest space consumers will appear here.");
-            processesContent.VerticalAlignment = VerticalAlignment.Top;
-            storageContent.VerticalAlignment = VerticalAlignment.Top;
+            storageContent = CreateStorageView();
             views.Children.Add(processesContent); views.Children.Add(storageContent);
             UpdateTabs();
             RefreshOptions();
@@ -266,6 +282,210 @@ namespace Neon
             content.Children.Add(message); panel.Child = content;
             return new ScrollViewer { Content = panel, MaxHeight = 240, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        }
+
+        private FrameworkElement CreateStorageView()
+        {
+            var panel = CreatePanel(new Thickness(9), true);
+            var layout = new DockPanel(); panel.Child = layout;
+            var content = new StackPanel(); DockPanel.SetDock(content, Dock.Top); layout.Children.Add(content);
+            content.Children.Add(Text("02 / STORAGE", 10, Green, true));
+            content.Children.Add(Text("LOCAL VOLUMES", 9, Muted, true));
+            storageVolumeRows = new StackPanel();
+            content.Children.Add(storageVolumeRows);
+            storageSummary = Text("Choose a volume to scan.", 9, Muted, false);
+            storageSummary.TextWrapping = TextWrapping.NoWrap; storageSummary.Margin = new Thickness(0, 5, 0, 5); content.Children.Add(storageSummary);
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            storageStart = new Button { Content = "Start scan", Style = (Style)Resources["NeonButton"], Padding = new Thickness(5, 2, 5, 2) };
+            storageStop = new Button { Content = "Cancel", Style = (Style)Resources["NeonButton"], Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(4, 0, 0, 0) };
+            storageDetails = new Button { Content = "Details", Style = (Style)Resources["NeonButton"], Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(4, 0, 0, 0) };
+            storageRefresh = new Button { Content = "Refresh", Style = (Style)Resources["NeonButton"], Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(4, 0, 0, 0) };
+            storageStart.Click += delegate { StartStorageScan(); };
+            storageStop.Click += delegate { if (storageCancel != null) storageCancel.Cancel(); };
+            storageDetails.Click += delegate { OpenStorageDetails(); };
+            storageRefresh.Click += async delegate { await RefreshStorageVolumes(); };
+            actions.Children.Add(storageStart); actions.Children.Add(storageStop); actions.Children.Add(storageDetails); actions.Children.Add(storageRefresh);
+            content.Children.Add(actions);
+            storageIndicator = new ProgressBar { IsIndeterminate = true, Height = 3, Margin = new Thickness(0, 5, 0, 0),
+                Foreground = Green, Visibility = Visibility.Collapsed }; content.Children.Add(storageIndicator);
+            storageStatus = Text("No scan started.", 9, Muted, false);
+            storageStatus.TextWrapping = TextWrapping.NoWrap; storageStatus.Margin = new Thickness(0, 5, 0, 2);
+            storageStatus.Height = 14; content.Children.Add(storageStatus);
+            storageExclusions = Text("", 9, Amber, false); storageExclusions.TextWrapping = TextWrapping.NoWrap; storageExclusions.Height = 14;
+            content.Children.Add(storageExclusions);
+            storageRootTitle = Text("LARGEST ROOT FOLDERS", 9, Muted, true);
+            storageRootTitle.Margin = new Thickness(0, 5, 0, 4); content.Children.Add(storageRootTitle);
+            var pager = new Grid { Height = 28 };
+            pager.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pager.ColumnDefinitions.Add(new ColumnDefinition());
+            pager.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            storagePrevious = new Button { Content = "‹", ToolTip = "Precedente", Style = (Style)Resources["NeonButton"] };
+            storageNext = new Button { Content = "›", ToolTip = "Successiva", Style = (Style)Resources["NeonButton"] };
+            storagePageLabel = Text("1 / 1", 9, Muted, true); storagePageLabel.HorizontalAlignment = HorizontalAlignment.Center;
+            storagePrevious.Click += delegate { storagePage--; RenderStorage(); };
+            storageNext.Click += delegate { storagePage++; RenderStorage(); };
+            pager.Children.Add(storagePrevious); Place(pager, storagePageLabel, 0, 1); Place(pager, storageNext, 0, 2);
+            DockPanel.SetDock(pager, Dock.Bottom); layout.Children.Add(pager);
+            storageTopRows = new StackPanel();
+            storageRowsArea = new Border { Child = storageTopRows, ClipToBounds = true };
+            storageRowsArea.SizeChanged += delegate { if (!renderingStorage) RenderStorage(); };
+            layout.Children.Add(storageRowsArea);
+            RenderStorage();
+            return panel;
+        }
+        private async Task RefreshStorageVolumes()
+        {
+            if (storageLoading || storageCancel != null) return;
+            storageLoading = true; storageStatus.Text = "Finding local volumes…"; storageRefresh.IsEnabled = false;
+            try
+            {
+                var volumes = await Task.Run(() => StorageVolumeCatalog.Read());
+                if (shuttingDown) return;
+                string previous = selectedStorageVolume == null ? null : selectedStorageVolume.Id;
+                storageVolumes = volumes; storageCatalogError = null;
+                selectedStorageVolume = storageVolumes.FirstOrDefault(v => v.Id == previous) ??
+                    storageVolumes.FirstOrDefault(v => String.Equals(v.Root, Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase)) ??
+                    storageVolumes.FirstOrDefault();
+            }
+            catch (Exception ex) { storageCatalogError = "Could not list volumes: " + ex.Message; }
+            finally { storageLoading = false; if (!shuttingDown) RenderStorage(); }
+        }
+        private void RenderStorage()
+        {
+            if (storageVolumeRows == null || renderingStorage) return;
+            renderingStorage = true;
+            try
+            {
+            bool scanning = storageCancel != null;
+            ForgetStorageText(storageVolumeRows);
+            ForgetStorageText(storageTopRows);
+            storageVolumeRows.Children.Clear();
+            var volumes = new Grid();
+            volumes.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            volumes.ColumnDefinitions.Add(new ColumnDefinition());
+            volumes.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            int volumeIndex = Math.Max(0, storageVolumes.IndexOf(selectedStorageVolume));
+            var previousVolume = new Button { Content = "‹", ToolTip = "Previous volume", IsEnabled = !scanning && volumeIndex > 0, Style = (Style)Resources["NeonButton"] };
+            var nextVolume = new Button { Content = "›", ToolTip = "Next volume", IsEnabled = !scanning && volumeIndex + 1 < storageVolumes.Count, Style = (Style)Resources["NeonButton"] };
+            previousVolume.Click += delegate { selectedStorageVolume = storageVolumes[volumeIndex - 1]; storagePage = 0; RenderStorage(); };
+            nextVolume.Click += delegate { selectedStorageVolume = storageVolumes[volumeIndex + 1]; storagePage = 0; RenderStorage(); };
+            var volumeLabel = Text(selectedStorageVolume == null ? "No local volumes" : selectedStorageVolume.Display, 10, White, false);
+            volumeLabel.VerticalAlignment = VerticalAlignment.Center; volumeLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
+            volumeLabel.Margin = new Thickness(5, 0, 5, 0);
+            volumeLabel.ToolTip = selectedStorageVolume == null ? null : selectedStorageVolume.Mounts;
+            volumes.Children.Add(previousVolume); Place(volumes, volumeLabel, 0, 1); Place(volumes, nextVolume, 0, 2);
+            storageVolumeRows.Children.Add(volumes);
+            storageStart.IsEnabled = !scanning && !storageLoading && selectedStorageVolume != null && selectedStorageVolume.Error == null;
+            storageStop.IsEnabled = scanning; storageRefresh.IsEnabled = !scanning && !storageLoading;
+            storageDetails.IsEnabled = selectedStorageVolume != null;
+            storageIndicator.Visibility = scanning ? Visibility.Visible : Visibility.Collapsed;
+            StorageScanResult result = null;
+            if (selectedStorageVolume != null)
+            {
+                storageResults.TryGetValue(selectedStorageVolume.Id, out result);
+                storageSummary.Text = (selectedStorageVolume.Error == null ? StorageFormat.Size(selectedStorageVolume.UsedBytes) + " used · " +
+                    StorageFormat.Size(selectedStorageVolume.FreeBytes) + " free / " +
+                    StorageFormat.Size(selectedStorageVolume.TotalBytes) : "Capacity unavailable");
+            }
+            else storageSummary.Text = "Choose a volume to scan.";
+            if (scanning)
+                storageStatus.Text = "Scanning… " + (storageProgress == null ? "" : storageProgress.Folders + " folders · " + storageProgress.Files + " files\n" + storageProgress.Path);
+            else if (result != null)
+                storageStatus.Text = (result.State == StorageScanState.Partial ? "Completed" : StorageFormat.State(result.State)) +
+                    " · " + result.Files.ToString("N0") + " files";
+            else if (!storageLoading) storageStatus.Text = storageCatalogError ?? (selectedStorageVolume == null ? "No volume available." :
+                selectedStorageVolume.Error ?? "No scan started. Logical sizes are approximate.");
+            storageStatus.ToolTip = scanning && storageProgress != null ? storageProgress.Path : result == null ? null :
+                result.Folders.ToString("N0") + " folders · " + result.Files.ToString("N0") + " files\n" + result.Error;
+            storageExclusions.Text = StoragePresentation.Warning(result);
+            storageExclusions.ToolTip = result == null ? null : StorageFormat.ExclusionSummary(result.Inaccessible, result.Reparse);
+            storageTopRows.Children.Clear();
+            var folders = result == null || result.RootFolder == null ? new List<StorageFolder>() :
+                result.RootFolder.Folders.Where(folder => folder.Bytes > 0).ToList();
+            double rowHeight = 31 * preferences.FontScale;
+            int pageSize = StoragePresentation.PageSize(storageRowsArea.ActualHeight, rowHeight);
+            int pages = StoragePresentation.Pages(folders.Count, pageSize);
+            storagePage = Math.Max(0, Math.Min(storagePage, pages - 1));
+            storagePageLabel.Text = (storagePage + 1) + " / " + pages;
+            storagePrevious.IsEnabled = storagePage > 0; storageNext.IsEnabled = storagePage + 1 < pages;
+            if (result != null && result.RootFolder != null)
+                foreach (var item in folders.Skip(storagePage * pageSize).Take(pageSize))
+                {
+                    var selected = item;
+                    var line = new Grid(); line.ColumnDefinitions.Add(new ColumnDefinition());
+                    line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    var name = Text(Path.GetFileName(item.Path.TrimEnd('\\')) +
+                        (item.Incomplete ? " · incomplete" : item.Inaccessible > 0 ? " · partial" : item.Reparse > 0 ? " · links" : ""), 10, White, false);
+                    name.TextTrimming = TextTrimming.CharacterEllipsis; line.Children.Add(name);
+                    var size = Text(StorageFormat.Size(item.Bytes), 10, Green, true);
+                    size.Margin = new Thickness(7, 0, 0, 0); Place(line, size, 0, 1);
+                    var row = new StackPanel(); row.Children.Add(line);
+                    row.Children.Add(new ProgressBar { Maximum = Math.Max(1, result.RootFolder.Bytes), Value = item.Bytes,
+                        Height = 3, Foreground = Green, Background = Line, BorderThickness = new Thickness(0), Margin = new Thickness(0, 3, 0, 0) });
+                    var button = new Button { Content = row, Style = (Style)Resources["NeonButton"],
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 3),
+                        Padding = new Thickness(5, 3, 5, 3), MinHeight = 0, Height = rowHeight - 3, ToolTip = item.Path };
+                    button.Click += delegate { OpenStorageDetails(selected); };
+                    storageTopRows.Children.Add(button);
+                }
+            if (result == null) storageTopRows.Children.Add(Text(scanning ? "Results appear when the scan stops." : "Scan a volume to explore its folders.", 10, Muted, false));
+            else if (folders.Count == 0)
+                storageTopRows.Children.Add(Text("Nessun contenuto misurato maggiore di 0 B", 10, Muted, false));
+            storagePageLabel.ToolTip = result == null || result.RootFolder == null ? null :
+                Math.Max(0, result.RootFolder.DirectFolderCount - result.RootFolder.Folders.Count) + " smaller folders not retained";
+            if (storageDetailsWindow != null) storageDetailsWindow.SetState(selectedStorageVolume, result, storageProgress, scanning);
+            }
+            finally { renderingStorage = false; }
+        }
+        private void ForgetStorageText(DependencyObject element)
+        {
+            var text = element as TextBlock;
+            if (text != null) fontSizes.Remove(text);
+            foreach (object child in LogicalTreeHelper.GetChildren(element))
+                if (child is DependencyObject) ForgetStorageText((DependencyObject)child);
+        }
+        private async void StartStorageScan()
+        {
+            if (storageCancel != null || storageLoading || selectedStorageVolume == null || selectedStorageVolume.Error != null) return;
+            var volume = selectedStorageVolume;
+            storageResults.Remove(volume.Id); storageProgress = null; storagePage = 0;
+            storageCancel = new CancellationTokenSource(); var cancel = storageCancel;
+            RenderStorage();
+            try
+            {
+                var progress = new Progress<StorageProgress>(value => { if (!shuttingDown && storageCancel == cancel) { storageProgress = value; RenderStorage(); } });
+                var result = await new StorageScanner().ScanAsync(volume, progress, cancel.Token);
+                if (!shuttingDown) storageResults[volume.Id] = result;
+            }
+            catch (Exception ex)
+            {
+                if (!shuttingDown) storageResults[volume.Id] = new StorageScanResult { VolumeId = volume.Id, Root = volume.Root,
+                    State = StorageScanState.Failed, Error = ex.Message, FinishedAt = DateTime.Now };
+            }
+            finally
+            {
+                if (storageCancel == cancel) storageCancel = null;
+                cancel.Dispose(); storageProgress = null;
+                if (!shuttingDown) RenderStorage();
+            }
+        }
+        private void OpenStorageDetails()
+        { OpenStorageDetails(null); }
+        private void OpenStorageDetails(StorageFolder folder)
+        {
+            if (selectedStorageVolume == null) return;
+            if (storageDetailsWindow != null) { if (folder != null) storageDetailsWindow.NavigateTo(folder); storageDetailsWindow.KeepOnDesktop(); return; }
+            if (settingsWindow != null) settingsWindow.Close();
+            if (speedTestWindow != null) speedTestWindow.Close();
+            storageDetailsWindow = new StorageDetailsWindow(preferences);
+            storageDetailsWindow.MinWidth = 100; storageDetailsWindow.MinHeight = 100;
+            PositionCompanionWindows();
+            if (preview) storageDetailsWindow.Left = storageDetailsWindow.Top = -32000;
+            storageDetailsWindow.Closed += delegate { storageDetailsWindow = null; };
+            StorageScanResult result; storageResults.TryGetValue(selectedStorageVolume.Id, out result);
+            storageDetailsWindow.SetState(selectedStorageVolume, result, storageProgress, storageCancel != null);
+            if (folder != null) storageDetailsWindow.NavigateTo(folder);
+            storageDetailsWindow.Show();
         }
 
         private FrameworkElement CreateProcessView()
@@ -299,11 +519,11 @@ namespace Neon
             processNote = Text("Collecting processes…", 9, Muted, false);
             processNote.TextWrapping = TextWrapping.Wrap;
             processNote.Margin = new Thickness(0, 7, 0, 7); content.Children.Add(processNote);
-            var list = new StackPanel();
+            var list = new System.Windows.Controls.Primitives.UniformGrid { Rows = 8 };
             for (int i = 0; i < 8; i++)
             {
                 var row = new ProcessRow();
-                row.Container = new Grid { Margin = new Thickness(0, 0, 0, 5), Visibility = Visibility.Collapsed, Focusable = true };
+                row.Container = new Grid { Margin = new Thickness(0, 0, 0, 5), Visibility = Visibility.Collapsed, Focusable = true, VerticalAlignment = VerticalAlignment.Center };
                 row.Container.ColumnDefinitions.Add(new ColumnDefinition());
                 row.Container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(55) });
                 row.Container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
@@ -318,13 +538,96 @@ namespace Neon
                 row.Memory.VerticalAlignment = VerticalAlignment.Center; Place(row.Container, row.Memory, 0, 2);
                 processRows.Add(row); list.Children.Add(row.Container);
             }
-            content.Children.Add(new ScrollViewer { Content = list, Height = 225, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+            var layout = new DockPanel();
+            panel.Child = null;
+            DockPanel.SetDock(content, Dock.Top); layout.Children.Add(content); layout.Children.Add(list);
+            panel.Child = layout;
             UpdateProcessSortButtons();
             return panel;
         }
 
         internal int SelectedTab { get { return selectedTab; } }
+        internal void VerifyStorageInterface()
+        {
+            if (!preview) throw new InvalidOperationException("Storage UI verification requires preview mode.");
+            SelectTab(2);
+            selectedStorageVolume = new StorageVolume { Id = "test", Root = @"C:\", Mounts = @"C:\", MediaType = "Type unverified",
+                TotalBytes = 1000000, FreeBytes = 400000 };
+            storageVolumes.Add(selectedStorageVolume);
+            var root = new StorageFolder { Path = @"C:\", Bytes = 600000, DirectFolderCount = 1 };
+            var child = new StorageFolder { Path = @"C:\Large folder", Parent = root, Bytes = 600000, Inaccessible = 1, DirectFileCount = 1 };
+            child.Files.Add(new StorageItem { Path = @"C:\Large folder\file.bin", Bytes = 400000 });
+            for (int i = 0; i < 49; i++) child.Files.Add(new StorageItem { Path = @"C:\Large folder\file " + i, Bytes = 1000 + i });
+            root.Folders.Add(child); root.Inaccessible = 1;
+            var result = new StorageScanResult { VolumeId = "test", Root = @"C:\", State = StorageScanState.Partial,
+                Files = 12, Folders = 3, Inaccessible = 1, RootFolder = root };
+            storageResults["test"] = result; RenderStorage();
+            OpenStorageDetails();
+            if (storageDetailsWindow == null || storageDetailsWindow.ResizeMode != ResizeMode.NoResize || storageDetailsWindow.ShowInTaskbar)
+                throw new InvalidOperationException("Storage details window configuration.");
+            if (Math.Abs(storageDetailsWindow.Width - ActualWidth) > 1 || Math.Abs(storageDetailsWindow.Height - ActualHeight) > 1)
+                throw new InvalidOperationException("Storage details window does not match widget size.");
+            storageDetailsWindow.NavigateTo(child);
+            storageDetailsWindow.UpdateLayout();
+            if (storageDetailsWindow.PageCount <= 1 || storageDetailsWindow.VisibleItemCount < 1)
+                throw new InvalidOperationException("Storage pagination did not limit the visible rows.");
+            storageDetailsWindow.NextPage(); storageDetailsWindow.PreviousPage();
+            if (storageDetailsWindow.CurrentPath != child.Path) throw new InvalidOperationException("Storage details did not enter folder.");
+            if (storageDetailsWindow.CurrentPath != child.Path) throw new InvalidOperationException("Files tab changed Storage location.");
+            storageDetailsWindow.NavigateUp();
+            if (storageDetailsWindow.CurrentPath != root.Path) throw new InvalidOperationException("Storage details did not return to root.");
+            storageCancel = new CancellationTokenSource();
+            storageDetailsWindow.Close();
+            if (storageCancel.IsCancellationRequested) throw new InvalidOperationException("Closing details canceled the scan.");
+            storageCancel.Dispose(); storageCancel = null;
+            OpenStorageDetails(child);
+            if (storageDetailsWindow == null) throw new InvalidOperationException("Storage details did not reopen.");
+            if (storageDetailsWindow.CurrentPath != child.Path) throw new InvalidOperationException("Storage tab did not open selected folder.");
+            var other = new StorageVolume { Id = "other", Root = @"E:\", Mounts = @"E:\", MediaType = "Type unverified" };
+            storageVolumes.Add(other);
+            storageResults["other"] = new StorageScanResult { VolumeId = "other", Root = @"E:\", State = StorageScanState.Complete,
+                RootFolder = new StorageFolder { Path = @"E:\" } };
+            selectedStorageVolume = other; RenderStorage();
+            if (storageDetailsWindow.CurrentPath != other.Root) throw new InvalidOperationException("Changing volume did not reset Storage navigation.");
+            OpenSettings();
+            if (storageDetailsWindow != null || settingsWindow == null) throw new InvalidOperationException("Personalize did not replace Storage details.");
+            settingsWindow.Close();
+            OpenStorageDetails(); OpenSpeedTest();
+            if (storageDetailsWindow != null || speedTestWindow == null) throw new InvalidOperationException("Speed Test did not replace Storage details.");
+            speedTestWindow.Close();
+        }
+        internal FrameworkElement StorageDetailsPreview(double? widgetScale = null, double? textScale = null)
+        {
+            if (widgetScale.HasValue) preferences.WidgetScale = widgetScale.Value;
+            if (textScale.HasValue) preferences.FontScale = textScale.Value;
+            ApplyPreferences();
+            Update(new Snapshot { CoreAvailable = true, Cpu = 28, RamTotal = 16, RamUsed = 8, RamPercent = 50,
+                Disks = new List<DiskSnapshot> { new DiskSnapshot { Name = @"C:\", Used = 320, Total = 500, IsSystem = true },
+                    new DiskSnapshot { Name = @"E:\", Used = 100, Total = 500 } } });
+            SelectTab(2);
+            selectedStorageVolume = new StorageVolume { Id = "preview", Root = @"C:\", Mounts = @"C:\", MediaType = "SSD",
+                TotalBytes = 500L * 1024 * 1024 * 1024, FreeBytes = 180L * 1024 * 1024 * 1024 };
+            storageVolumes.Add(selectedStorageVolume);
+            var root = new StorageFolder { Path = @"C:\", Bytes = 110L * 1024 * 1024 * 1024, DirectFolderCount = 5, DirectFileCount = 1, Inaccessible = 2, Reparse = 5 };
+            root.Folders.Add(new StorageFolder { Path = @"C:\Program Files", Parent = root, Bytes = 40L * 1024 * 1024 * 1024, Inaccessible = 2 });
+            root.Folders.Add(new StorageFolder { Path = @"C:\Users", Parent = root, Bytes = 30L * 1024 * 1024 * 1024 });
+            root.Folders.Add(new StorageFolder { Path = @"C:\Windows", Parent = root, Bytes = 18L * 1024 * 1024 * 1024, Reparse = 5 });
+            root.Folders.Add(new StorageFolder { Path = @"C:\ProgramData", Parent = root, Bytes = 6L * 1024 * 1024 * 1024 });
+            root.Folders.Add(new StorageFolder { Path = @"C:\Temp", Parent = root, Bytes = 3L * 1024 * 1024 * 1024 });
+            root.Files.Add(new StorageItem { Path = @"C:\big file.bin", Bytes = 8L * 1024 * 1024 * 1024 });
+            for (int i = 0; i < 10; i++) root.Folders.Add(new StorageFolder { Path = @"C:\Folder " + i, Parent = root, Bytes = (10 - i) * 1024L * 1024 });
+            root.Folders.Add(new StorageFolder { Path = @"C:\Unreadable zero", Parent = root, Inaccessible = 1 });
+            root.DirectFolderCount = root.Folders.Count;
+            var result = new StorageScanResult { VolumeId = "preview", Root = @"C:\", State = StorageScanState.Partial,
+                Files = 28543, Folders = 4031, Inaccessible = 2, Reparse = 5, RootFolder = root };
+            storageResults["preview"] = result; RenderStorage();
+            var details = new StorageDetailsWindow(preferences);
+            Visual.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+            details.Width = Visual.DesiredSize.Width; details.Height = Visual.DesiredSize.Height;
+            details.SetPreviewSize(details.Width, details.Height);
+            details.SetState(selectedStorageVolume, result, null, false);
+            return details.Visual;
+        }
         internal void SelectTab(int index)
         {
             if (index < 0 || index >= tabButtons.Count) throw new ArgumentOutOfRangeException("index");
@@ -339,6 +642,7 @@ namespace Neon
             RefreshOptions();
             if (IsLoaded) { UpdateLayout(); RestorePosition(); }
             if (index == 1 && previous != 1 && !preview) RefreshProcesses(true);
+            if (index == 2 && previous != 2 && !preview) { var unused = RefreshStorageVolumes(); }
         }
         private void UpdateTabs()
         {
@@ -554,6 +858,7 @@ namespace Neon
             if (!preview && !IsVisible) Reveal();
             if (speedTestWindow != null) { speedTestWindow.KeepOnDesktop(); return; }
             if (settingsWindow != null) settingsWindow.Close();
+            if (storageDetailsWindow != null) storageDetailsWindow.Close();
             speedTestWindow = new SpeedTestWindow(preferences);
             var area = CurrentWorkArea();
             speedTestWindow.MinWidth = 100; speedTestWindow.MinHeight = 100;
@@ -595,6 +900,7 @@ namespace Neon
             }
             timer.Interval = TimeSpan.FromSeconds(preferences.RefreshSeconds);
             if (speedTestWindow != null) speedTestWindow.ApplyAppearance(preferences);
+            if (storageDetailsWindow != null) storageDetailsWindow.ApplyAppearance(preferences);
             Topmost = false;
             UpdateTabs();
             UpdateProcessSortButtons();
@@ -609,6 +915,7 @@ namespace Neon
             if (!preview && !IsVisible) Reveal();
             if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.RefreshStartupState(); settingsWindow.KeepOnDesktop(); return; }
             if (speedTestWindow != null) speedTestWindow.Close();
+            if (storageDetailsWindow != null) storageDetailsWindow.Close();
             settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings,
                 preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration());
             var area = CurrentWorkArea();
@@ -939,7 +1246,7 @@ namespace Neon
             var area = CurrentWorkArea();
             var widgetWidth = ActualWidth > 0 ? ActualWidth : PanelWidth;
             var widgetHeight = ActualHeight > 0 ? ActualHeight : viewport.DesiredSize.Height;
-            foreach (Window companion in new Window[] { settingsWindow, speedTestWindow })
+            foreach (Window companion in new Window[] { settingsWindow, speedTestWindow, storageDetailsWindow })
             {
                 if (companion == null) continue;
                 companion.MaxWidth = area.Width; companion.MaxHeight = area.Height;
