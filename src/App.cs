@@ -34,6 +34,7 @@ namespace Neon
                 if (args.Length >= 2 && args[0] == "--self-test") return Verify(args[1]);
                 if (args.Length >= 2 && args[0] == "--process-test") { File.WriteAllText(args[1], ProcessTests.Run()); return 0; }
                 if (args.Length >= 2 && args[0] == "--storage-test") { File.WriteAllText(args[1], StorageTests.Run()); return 0; }
+                if (args.Length >= 2 && args[0] == "--device-test") { File.WriteAllText(args[1], DeviceSelectionTests.RunLive()); return 0; }
                 if (args.Length >= 2 && args[0] == "--storage-preview")
                 {
                     var storageApp = new Application(); var storageWindow = new MonitorWindow(true);
@@ -103,12 +104,19 @@ namespace Neon
                     var settingsApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                     File.WriteAllText(args[1], SettingsTests.Run(args[1])); settingsApp.Shutdown(); return 0;
                 }
-                if (args.Length >= 2 && args[0] == "--settings-preview")
+                if (args.Length >= 2 && (args[0] == "--settings-preview" || args[0] == "--device-settings-preview"))
                 {
                     var settingsApp = new Application();
                     var monitor = new MonitorWindow(true);
                     monitor.Visual.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
-                    var settings = new SettingsWindow(monitor.CurrentPreferences, delegate { return true; });
+                    var settings = new SettingsWindow(monitor.CurrentPreferences, delegate { return true; }, null, null, args[0] == "--device-settings-preview");
+                    if (args[0] == "--device-settings-preview")
+                    {
+                        settings.VerifyDeviceControls();
+                        settings.MinHeight = 100; settings.Width = 340; settings.Height = 440;
+                        settings.Visual.Width = settings.Width; settings.Visual.Height = settings.Height;
+                        SaveBitmap(RenderElement(settings.Visual), args[1]); settings.Close(); monitor.Close(); settingsApp.Shutdown(); return 0;
+                    }
                     settings.MinWidth = 100; settings.MinHeight = 100;
                     settings.Width = monitor.Visual.DesiredSize.Width;
                     settings.Height = monitor.Visual.DesiredSize.Height;

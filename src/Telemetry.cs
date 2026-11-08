@@ -23,9 +23,12 @@ namespace Neon
         public double? Cpu;
         public double RamPercent, RamUsed, RamTotal, CommitUsed, CommitTotal;
         public double Download, Upload;
+        public bool NetworkAvailable = true;
+        public string NetworkNote;
         public List<DiskSnapshot> Disks = new List<DiskSnapshot>();
         public string CpuName = "CPU", GpuName = "GPU";
         public double? Gpu, GpuMemoryUsed, GpuMemoryTotal, CpuTemperature, GpuTemperature, FanRpm;
+        internal double? CpuFanRpm;
         public string SensorSource = "No provider", SensorNote = "";
         public TimeSpan Uptime;
         public bool CoreAvailable;
@@ -45,6 +48,7 @@ namespace Neon
                 {
                     long[] old;
                     if (!previous.TryGetValue(entry.Key, out old)) continue;
+                    if (entry.Value[0] < old[0] || entry.Value[1] < old[1]) continue;
                     incoming += Math.Max(0, entry.Value[0] - old[0]) / elapsed;
                     outgoing += Math.Max(0, entry.Value[1] - old[1]) / elapsed;
                 }
@@ -70,12 +74,14 @@ namespace Neon
         [DllImport("kernel32.dll")]
         private static extern ulong GetTickCount64();
         private readonly RateCounter network = new RateCounter();
+        private string networkSelection;
+        private Preferences selection = new Preferences();
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private long lastIdle, lastKernel, lastUser;
         private bool cpuPrimed, identified;
         private string cpuName = "CPU", gpuName = "GPU not detected", nvidiaPath;
         private DateTime sensorTime = DateTime.MinValue;
-        private double? cpuTemp, gpuTemp, gpuLoad, gpuUsed, gpuTotal, fan;
+        private double? cpuTemp, gpuTemp, gpuLoad, gpuUsed, gpuTotal, fan, cpuFan;
         private string source = "No provider", sensorNote = "";
 
         public static double? CpuUsage(long idleDelta, long kernelDelta, long userDelta)
@@ -86,7 +92,13 @@ namespace Neon
         }
 
         public Snapshot Read()
+        { return Read(new Preferences()); }
+
+        public Snapshot Read(Preferences preferences)
         {
+            var next = preferences.Copy();
+            if (selection.GpuId != next.GpuId) sensorTime = DateTime.MinValue;
+            selection = next;
             var s = new Snapshot();
             var errors = new List<string>();
             try
@@ -109,28 +121,35 @@ namespace Neon
             try
             {
                 var counters = new Dictionary<string, long[]>();
+                var available = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string key = selection.NetworkIds == null ? "all" : String.Join("|", selection.NetworkIds.OrderBy(id => id));
+                if (key != networkSelection) { network.Sample(new Dictionary<string, long[]>(), clock.Elapsed.TotalSeconds); networkSelection = key; }
                 foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
                 {
-                    if (adapter.OperationalStatus != OperationalStatus.Up || adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback || adapter.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
-                    try { var stats = adapter.GetIPStatistics(); counters[adapter.Id] = new[] { stats.BytesReceived, stats.BytesSent }; }
+                    if (!DeviceCatalog.Includes(selection.NetworkIds, adapter.Id) || adapter.OperationalStatus != OperationalStatus.Up || adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                    try { var stats = adapter.GetIPStatistics(); counters[adapter.Id] = new[] { stats.BytesReceived, stats.BytesSent }; available.Add(adapter.Id); }
                     catch (NetworkInformationException) { }
                 }
                 var rates = network.Sample(counters, clock.Elapsed.TotalSeconds);
                 s.Download = rates[0]; s.Upload = rates[1];
+                s.NetworkAvailable = selection.NetworkIds == null ? counters.Count > 0 : selection.NetworkIds.Length > 0 && selection.NetworkIds.All(available.Contains);
+                s.NetworkNote = selection.NetworkIds == null ? "All active interfaces (including VPN and virtual adapters)" : selection.NetworkIds.Length == 0 ? "No interfaces selected" : "Selected interfaces: " + String.Join(", ", selection.NetworkIds);
+                if (!s.NetworkAvailable && (selection.NetworkIds == null || selection.NetworkIds.Length > 0))
+                { s.NetworkNote += " · unavailable or disconnected"; errors.Add(s.NetworkNote); }
             }
-            catch (Exception ex) { errors.Add("Network: " + ex.Message); }
+            catch (Exception ex)
+            {
+                network.Sample(new Dictionary<string, long[]>(), clock.Elapsed.TotalSeconds);
+                s.NetworkAvailable = false; s.NetworkNote = "Network unavailable: " + ex.Message; errors.Add(s.NetworkNote);
+            }
             try
             {
                 string system = Path.GetPathRoot(Environment.SystemDirectory);
-                foreach (var drive in DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed).OrderBy(d => d.Name))
+                var volumes = StorageVolumeCatalog.Read();
+                foreach (var drive in DeviceCatalog.SelectVolumes(volumes, selection.VolumeIds))
                 {
-                    var disk = new DiskSnapshot { Name = drive.Name, IsSystem = String.Equals(drive.Name, system, StringComparison.OrdinalIgnoreCase) };
-                    try
-                    {
-                        if (!drive.IsReady) disk.Error = "Drive unavailable";
-                        else { disk.Total = drive.TotalSize; disk.Used = drive.TotalSize - drive.TotalFreeSpace; disk.Label = drive.VolumeLabel; }
-                    }
-                    catch (Exception ex) { disk.Error = "Drive inaccessible"; errors.Add(drive.Name + ": " + ex.Message); }
+                    var disk = new DiskSnapshot { Name = drive.Root, IsSystem = String.Equals(drive.Root, system, StringComparison.OrdinalIgnoreCase),
+                        Total = drive.TotalBytes, Used = drive.UsedBytes, Label = drive.Label, Error = drive.Error };
                     s.Disks.Add(disk);
                 }
             }
@@ -144,6 +163,9 @@ namespace Neon
             s.CpuTemperature = cpuTemp; s.GpuTemperature = gpuTemp; s.Gpu = gpuLoad;
             s.GpuMemoryUsed = gpuUsed; s.GpuMemoryTotal = gpuTotal; s.FanRpm = fan;
             s.SensorSource = source; s.SensorNote = sensorNote;
+            if (!String.IsNullOrEmpty(selection.GpuId) && !gpuLoad.HasValue && !gpuTemp.HasValue && !gpuUsed.HasValue)
+                errors.Add("Selected GPU sensors unavailable (missing device/provider or ambiguous sensor identity)");
+            foreach (var disk in s.Disks.Where(d => d.Error != null)) errors.Add(disk.Name + ": " + disk.Error);
             s.Error = errors.Count == 0 ? null : String.Join("; ", errors);
             return s;
         }
@@ -193,15 +215,28 @@ namespace Neon
         private void ReadSensors()
         {
             // Never keep the previous temperature when a provider disappears.
-            cpuTemp = gpuTemp = gpuLoad = gpuUsed = gpuTotal = fan = null;
+            cpuTemp = gpuTemp = gpuLoad = gpuUsed = gpuTotal = fan = cpuFan = null;
             source = "No provider"; sensorNote = "";
             foreach (var provider in new[] { "LibreHardwareMonitor", "OpenHardwareMonitor" })
             {
                 try
                 {
-                    var cpuTemps = new List<double>(); var gpuTemps = new List<double>();
-                    var gpuLoads = new List<double>(); var fans = new List<double>();
-                    string selectedGpu = null;
+                    var hardware = new List<DeviceOption>();
+                    using (var search = Query("root\\" + provider, "SELECT Name, Identifier FROM Hardware"))
+                    using (var items = search.Get())
+                        foreach (ManagementObject item in items) using (item)
+                        {
+                            string id = Convert.ToString(item["Identifier"]).ToLowerInvariant();
+                            if (id.Contains("/gpu-")) hardware.Add(new DeviceOption { Id = id, Name = Convert.ToString(item["Name"]) });
+                        }
+                    string requestedGpu = null;
+                    if (String.IsNullOrEmpty(selection.GpuId)) requestedGpu = hardware.Count == 0 ? null : hardware[0].Id;
+                    else if (selection.GpuId.StartsWith("pnp:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { requestedGpu = DeviceCatalog.MatchGpu(selection.GpuId, DeviceCatalog.PhysicalGpus(), hardware); }
+                        catch { }
+                    }
+                    var sensors = new List<SensorValue>();
                     using (var search = Query("root\\" + provider, "SELECT Name, SensorType, Value, Identifier FROM Sensor"))
                     using (var items = search.Get())
                     {
@@ -210,78 +245,44 @@ namespace Neon
                         {
                             if (item["Value"] == null) continue;
                             double v = Convert.ToDouble(item["Value"], CultureInfo.InvariantCulture);
-                            if (Double.IsNaN(v) || Double.IsInfinity(v)) continue;
-                            string id = Convert.ToString(item["Identifier"]).ToLowerInvariant();
-                            string name = Convert.ToString(item["Name"]);
-                            string type = Convert.ToString(item["SensorType"]);
-                            bool cpu = id.Contains("/intelcpu/") || id.Contains("/amdcpu/") || id.Contains("/cpu/");
-                            bool gpu = id.Contains("/gpu-");
-                            // Keep every GPU metric on the same physical device.
-                            if (gpu)
-                            {
-                                string device = String.Join("/", id.Split('/').Take(3));
-                                if (selectedGpu == null) selectedGpu = device;
-                                gpu = selectedGpu == device;
-                            }
-                            if (type == "Temperature" && v > 0 && v < 150)
-                            { if (cpu) cpuTemps.Add(v); if (gpu) gpuTemps.Add(v); }
-                            if (gpu && type == "Load" && name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0) gpuLoads.Add(v);
-                            if (type == "Fan" && v >= 0) fans.Add(v);
+                            sensors.Add(new SensorValue { Value = v, Id = Convert.ToString(item["Identifier"]),
+                                Name = Convert.ToString(item["Name"]), Type = Convert.ToString(item["SensorType"]) });
                         }
                     }
-                    if (cpuTemps.Count > 0) cpuTemp = cpuTemps.Max();
-                    if (gpuTemps.Count > 0) gpuTemp = gpuTemps.Max();
-                    if (gpuLoads.Count > 0) gpuLoad = gpuLoads.Max();
-                    if (fans.Count > 0) fan = fans.Max();
+                    // Commit a whole provider sample only after enumeration succeeds.
+                    var sample = SensorReadings.Read(hardware, sensors, requestedGpu);
+                    if (sample.CpuTemperature.HasValue) cpuTemp = sample.CpuTemperature;
+                    gpuTemp = sample.GpuTemperature; gpuLoad = sample.Gpu;
+                    gpuUsed = sample.GpuMemoryUsed; gpuTotal = sample.GpuMemoryTotal;
+                    if (sample.FanRpm.HasValue) fan = sample.FanRpm;
+                    if (sample.CpuFanRpm.HasValue) cpuFan = sample.CpuFanRpm;
+                    gpuName = sample.GpuName;
                     source = provider;
-                    // Resolve the selected GPU's display name from the provider too.
-                    if (selectedGpu != null)
-                        using (var search = Query("root\\" + provider, "SELECT Name, Identifier FROM Hardware"))
-                        using (var items = search.Get())
-                            foreach (ManagementObject item in items) using (item)
-                                if (Convert.ToString(item["Identifier"]).ToLowerInvariant() == selectedGpu) gpuName = Convert.ToString(item["Name"]);
-                    break;
+                    if (String.IsNullOrEmpty(selection.GpuId) || requestedGpu != null) break;
                 }
                 catch { }
             }
             // NVIDIA can expose its own sensors without a separate monitoring app.
             // Keep a complete GPU group from one provider rather than mixing devices.
-            if (nvidiaPath != null && !gpuLoad.HasValue && !gpuTemp.HasValue) ReadNvidia();
+            if ((selection.GpuId ?? "").StartsWith("nvidia:", StringComparison.Ordinal) || nvidiaPath != null && String.IsNullOrEmpty(selection.GpuId) && !gpuLoad.HasValue && !gpuTemp.HasValue) ReadNvidia();
+            if (!String.IsNullOrEmpty(selection.GpuId) && !gpuLoad.HasValue && !gpuTemp.HasValue && !gpuUsed.HasValue)
+                gpuName = "Selected GPU unavailable · " + selection.GpuId;
             if (!cpuTemp.HasValue)
                 sensorNote = "CPU temperature is unavailable. Run Libre Hardware Monitor with WMI enabled; some sensors require administrator privileges.";
         }
 
         private void ReadNvidia()
         {
+            fan = cpuFan;
             try
             {
-                var info = new ProcessStartInfo(nvidiaPath, "--query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits") {
-                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
-                };
-                using (var process = Process.Start(info))
-                {
-                    var stdout = process.StandardOutput.ReadToEndAsync();
-                    var stderr = process.StandardError.ReadToEndAsync();
-                    if (!process.WaitForExit(1800)) { process.Kill(); return; }
-                    if (process.ExitCode != 0) return;
-                    string row = stdout.Result.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                    if (row == null) return;
-                    string[] fields = row.Split(',').Select(f => f.Trim()).ToArray();
-                    if (fields.Length != 5) return;
-                    gpuName = fields[0]; gpuTemp = Number(fields[1]); gpuLoad = Number(fields[2]);
-                    var used = Number(fields[3]); var total = Number(fields[4]);
-                    gpuUsed = used.HasValue ? used * 1048576 : null;
-                    gpuTotal = total.HasValue ? total * 1048576 : null;
-                    source = source == "No provider" ? "NVIDIA SMI" : source + " + NVIDIA";
-                }
+                var sample = SensorReadings.Nvidia(DeviceCatalog.Nvidia("uuid,name,temperature.gpu,utilization.gpu,memory.used,memory.total"), selection.GpuId);
+                gpuName = sample.GpuName; gpuTemp = sample.GpuTemperature; gpuLoad = sample.Gpu;
+                gpuUsed = sample.GpuMemoryUsed; gpuTotal = sample.GpuMemoryTotal;
+                if (gpuLoad.HasValue || gpuTemp.HasValue || gpuUsed.HasValue)
+                    source = source == "No provider" ? "NVIDIA SMI" : source + " + NVIDIA SMI";
             }
             catch { }
-        }
-
-        private static double? Number(string value)
-        {
-            double parsed;
-            return Double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) && !Double.IsNaN(parsed) && !Double.IsInfinity(parsed) && parsed >= 0 ? (double?)parsed : null;
         }
     }
 }

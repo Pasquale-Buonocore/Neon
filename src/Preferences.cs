@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Web.Script.Serialization;
 
 namespace Neon
@@ -14,12 +15,21 @@ namespace Neon
         public double WidgetScale { get; set; }
         public double FontScale { get; set; }
         public double RefreshSeconds { get; set; }
+        public string GpuId { get; set; }
+        public string[] VolumeIds { get; set; }
+        public string[] NetworkIds { get; set; }
         public Preferences()
         {
             Left = Top = -99999; Background = 0.60; Theme = "matrix"; DockToCorner = true;
             WidgetScale = FontScale = RefreshSeconds = 1;
         }
-        public Preferences Copy() { return (Preferences)MemberwiseClone(); }
+        public Preferences Copy()
+        {
+            var copy = (Preferences)MemberwiseClone();
+            copy.VolumeIds = VolumeIds == null ? null : (string[])VolumeIds.Clone();
+            copy.NetworkIds = NetworkIds == null ? null : (string[])NetworkIds.Clone();
+            return copy;
+        }
         public void Normalize()
         {
             Left = Finite(Left) ? Left : -99999; Top = Finite(Top) ? Top : -99999;
@@ -28,7 +38,11 @@ namespace Neon
             FontScale = Limit(FontScale, 0.80, 1.40, 1);
             RefreshSeconds = Limit(RefreshSeconds, 0.5, 10, 1);
             Theme = ThemePalette.Find(Theme).Id;
+            GpuId = String.IsNullOrWhiteSpace(GpuId) ? null : GpuId.Trim();
+            VolumeIds = NormalizeIds(VolumeIds); NetworkIds = NormalizeIds(NetworkIds);
         }
+        private static string[] NormalizeIds(string[] ids)
+        { return ids == null ? null : ids.Where(id => !String.IsNullOrWhiteSpace(id)).Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(); }
         private static bool Finite(double value) { return !Double.IsNaN(value) && !Double.IsInfinity(value); }
         private static double Limit(double value, double min, double max, double fallback)
         { return Finite(value) ? Math.Max(min, Math.Min(max, value)) : fallback; }

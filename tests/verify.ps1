@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $projectRoot 'build.ps1') -ExecutableName $ExecutableName
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-foreach ($mode in @('self-test', 'process-test', 'storage-test', 'ui-test', 'desktop-test', 'settings-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview', 'speed-preview', 'storage-preview', 'storage-tab-preview')) {
+foreach ($mode in @('self-test', 'process-test', 'storage-test', 'ui-test', 'desktop-test', 'settings-test', 'device-test', 'snapshot', 'gallery', 'tab-gallery', 'menu-preview', 'icon-preview', 'settings-preview', 'device-settings-preview', 'speed-preview', 'storage-preview', 'storage-tab-preview')) {
     $filename = switch ($mode) {
         'self-test' { 'verification.json' }
         'process-test' { 'process-verification.txt' }
@@ -12,12 +12,14 @@ foreach ($mode in @('self-test', 'process-test', 'storage-test', 'ui-test', 'des
         'ui-test' { 'ui-verification.txt' }
         'desktop-test' { 'desktop-verification.txt' }
         'settings-test' { 'settings-verification.txt' }
+        'device-test' { 'device-live-verification.txt' }
         'snapshot' { 'neon-preview.png' }
         'gallery' { 'neon-themes.png' }
         'tab-gallery' { 'neon-tabs.png' }
         'menu-preview' { 'neon-menu.png' }
         'icon-preview' { 'neon-icon.png' }
         'settings-preview' { 'neon-settings.png' }
+        'device-settings-preview' { 'neon-device-settings.png' }
         'speed-preview' { 'neon-speed-test.png' }
         'storage-preview' { 'neon-storage-details.png' }
         'storage-tab-preview' { 'neon-storage-tab.png' }

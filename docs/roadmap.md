@@ -6,7 +6,7 @@ The following are proposed additions or features awaiting final acceptance:
 
 - Validate Storage on both Windows 10 and 11, including protected directories and multiple partitions, before closing [issue #11](https://github.com/Pasquale-Buonocore/Neon/issues/11).
 - Improve CPU temperature provider diagnostics and sensor identification ([issue #3](https://github.com/Pasquale-Buonocore/Neon/issues/3)).
-- Allow GPU, local-volume, and network-interface selection ([issue #4](https://github.com/Pasquale-Buonocore/Neon/issues/4)).
+- GPU, local-volume, and network-interface selection is implemented in the dedicated Devices panel; perform the multi-device Windows 10/11 acceptance checks in the development guide ([issue #4](https://github.com/Pasquale-Buonocore/Neon/issues/4)).
 - Add independent position lock and click-through controls ([issue #5](https://github.com/Pasquale-Buonocore/Neon/issues/5)).
 - Discover possible driver updates from Windows Update and official vendors without installing them ([issue #7](https://github.com/Pasquale-Buonocore/Neon/issues/7)).
 

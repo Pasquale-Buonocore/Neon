@@ -40,6 +40,8 @@ namespace Neon
             Directory.CreateDirectory(temporary);
             try
             {
+                DeviceSelectionTests.Run(temporary);
+                MenuDismissalTests.Run();
                 string path = Path.Combine(temporary, "settings.json");
                 var missing = PreferencesStore.Load(path);
                 Assert(missing.WidgetScale == 1 && missing.FontScale == 1 && missing.RefreshSeconds == 1, "missing file defaults");

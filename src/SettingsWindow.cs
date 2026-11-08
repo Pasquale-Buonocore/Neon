@@ -1,9 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
@@ -28,16 +31,22 @@ namespace Neon
         private TextBlock status;
         private Border frame;
         private DesktopLayer desktopLayer;
+        private StackPanel devices;
+        private DeviceCatalog deviceCatalog;
+        public readonly bool IsDevicePanel;
+        private int deviceTab;
+        private readonly List<Button> deviceTabs = new List<Button>();
         public FrameworkElement Visual { get { return frame; } }
         private static Brush Color(string hex) { return (Brush)new BrushConverter().ConvertFromString(hex); }
         private TextBlock Label(string text, double size, string color)
         { var label = new TextBlock { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap }; label.SetResourceReference(TextBlock.ForegroundProperty, color == "#70FFA7" ? "SettingsAccent" : color == "#E6F3EC" ? "SettingsText" : "SettingsMuted"); return label; }
 
-        public SettingsWindow(Preferences current, Func<Preferences, bool> applySettings, Func<Preferences, bool> saveSettings = null, IStartupRegistration startupRegistration = null)
+        public SettingsWindow(Preferences current, Func<Preferences, bool> applySettings, Func<Preferences, bool> saveSettings = null, IStartupRegistration startupRegistration = null, bool devicesOnly = false, Action openDevices = null)
         {
-            startup = startupRegistration ?? new PreviewStartupRegistration();
+            IsDevicePanel = devicesOnly;
+            startup = devicesOnly ? new PreviewStartupRegistration() : startupRegistration ?? new PreviewStartupRegistration();
             draft = current.Copy(); draft.Normalize(); saved = draft.Copy(); apply = applySettings; save = saveSettings ?? applySettings;
-            Title = "NEON // Personalize"; Icon = BrandIcon.Window(); Width = 320; Height = 470;
+            Title = devicesOnly ? "NEON // Devices" : "NEON // Personalize"; Icon = BrandIcon.Window(); Width = 340; Height = 470;
             MinWidth = 300; MinHeight = Math.Min(330, SystemParameters.WorkArea.Height - 24);
             MaxHeight = SystemParameters.WorkArea.Height - 24;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -63,15 +72,20 @@ namespace Neon
             var close = Button("×", delegate { Close(); }); close.ToolTip = "Close personalization";
             close.Style = (Style)Resources["NeonIconButton"]; close.VerticalAlignment = VerticalAlignment.Top;
             DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
-            var heading = new StackPanel(); heading.Children.Add(Label("NEON / PERSONALIZE", 9, "#70FFA7"));
-            var title = Label("Personalize", 20, "#E6F3EC"); heading.Children.Add(title);
+            var heading = new StackPanel(); heading.Children.Add(Label(devicesOnly ? "NEON / MONITORING" : "NEON / PERSONALIZE", 9, "#70FFA7"));
+            var title = Label(devicesOnly ? "Devices" : "Personalize", 20, "#E6F3EC"); heading.Children.Add(title);
             header.Children.Add(heading);
             heading.MouseLeftButtonDown += delegate { if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); };
             DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
             var footer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
             status = Label("Live preview · Save to keep changes.", 10, "#9FBAAB"); status.MinHeight = 18; footer.Children.Add(status);
             var buttons = new Grid(); buttons.ColumnDefinitions.Add(new ColumnDefinition()); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var reset = Button("Reset", delegate { LoadValues(new Preferences()); launchAtLogin.IsChecked = false; PreviewDraft(); }); reset.Width = 60; reset.HorizontalAlignment = HorizontalAlignment.Left; buttons.Children.Add(reset);
+            var reset = Button("Reset", delegate
+            {
+                if (IsDevicePanel) { draft.GpuId = null; draft.VolumeIds = draft.NetworkIds = null; RenderDevices(); }
+                else { var defaults = new Preferences(); defaults.GpuId = draft.GpuId; defaults.VolumeIds = draft.VolumeIds; defaults.NetworkIds = draft.NetworkIds; LoadValues(defaults); launchAtLogin.IsChecked = false; }
+                PreviewDraft();
+            }); reset.Width = 60; reset.HorizontalAlignment = HorizontalAlignment.Left; buttons.Children.Add(reset);
             var applyButton = Button("Cancel", delegate { Close(); }); applyButton.Width = 60; Grid.SetColumn(applyButton, 1); applyButton.Margin = new Thickness(8, 0, 0, 0); buttons.Children.Add(applyButton);
             var done = Button("Save", delegate { ApplyDraft(true); }); done.Width = 60; done.IsDefault = true; done.SetResourceReference(Control.BackgroundProperty, "SettingsSelected"); Grid.SetColumn(done, 2); done.Margin = new Thickness(8, 0, 0, 0); buttons.Children.Add(done);
             footer.Children.Add(buttons); DockPanel.SetDock(footer, Dock.Bottom); layout.Children.Add(footer);
@@ -105,10 +119,128 @@ namespace Neon
                 catch (Exception ex) { ShowSaveStatus(false, "Windows startup settings could not be opened. " + ex.Message); }
             });
             windowsStartup.HorizontalAlignment = HorizontalAlignment.Left; form.Children.Add(windowsStartup);
-            layout.Children.Add(new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 6, 0) });
+            devices = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+            if (devicesOnly)
+            {
+                var navigation = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 8) };
+                for (int i = 0; i < 3; i++)
+                {
+                    int index = i;
+                    var tab = Button(new[] { "GPU", "Volumes", "Network" }[i], delegate { deviceTab = index; RenderDevices(); });
+                    tab.Margin = new Thickness(2, 0, 2, 0); tab.Padding = new Thickness(2, 5, 2, 5); deviceTabs.Add(tab); navigation.Children.Add(tab);
+                }
+                DockPanel.SetDock(navigation, Dock.Top); layout.Children.Add(navigation);
+                Loaded += async delegate
+                {
+                    if (deviceCatalog != null) return;
+                    devices.Children.Add(Label("Finding your devices…", 11, "#9FBAAB"));
+                    deviceCatalog = await Task.Run(() => DeviceCatalog.Read()); RenderDevices();
+                };
+            }
+            else if (openDevices != null) form.Children.Add(Button("Monitoring devices…", openDevices));
+            layout.Children.Add(new ScrollViewer { Content = devicesOnly ? devices : form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 6, 0) });
             LoadValues(draft); UpdateThemeButtons(); RefreshStartupState();
         }
-        private void StartupSelectionChanged(object sender, RoutedEventArgs e)
+        private void RenderDevices()
+        {
+            if (deviceCatalog == null) return;
+            devices.Children.Clear();
+            for (int i = 0; i < deviceTabs.Count; i++) deviceTabs[i].SetResourceReference(Control.BorderBrushProperty, i == deviceTab ? "SettingsAccent" : "SettingsLine");
+            var refreshButton = Button("Refresh devices", async delegate
+            { deviceCatalog = await Task.Run(() => DeviceCatalog.Read()); RenderDevices(); });
+            refreshButton.Margin = new Thickness(0, 0, 0, 10); devices.Children.Add(refreshButton);
+            if (deviceTab == 0)
+            {
+            devices.Children.Add(Label("Choose the GPU to monitor", 14, "#E6F3EC"));
+            devices.Children.Add(Label("Select one card. Unavailable readings appear as N/A.", 11, "#9FBAAB"));
+            var options = new List<DeviceOption> { new DeviceOption { Id = null, Name = "Automatic GPU" } };
+            options.AddRange(deviceCatalog.Gpus.Where(g => g.Id == draft.GpuId || !g.Id.StartsWith("pnp:") ||
+                !deviceCatalog.Gpus.Any(n => n.Id.StartsWith("nvidia:") &&
+                    n.Name.Split(new[] { " · " }, StringSplitOptions.None)[0] == g.Name.Split(new[] { " · " }, StringSplitOptions.None)[0])));
+            if (!String.IsNullOrEmpty(draft.GpuId) && !options.Any(o => o.Id == draft.GpuId))
+                options.Add(new DeviceOption { Id = draft.GpuId, Name = "Unavailable · " + draft.GpuId });
+            var gpuButtons = new List<Button>();
+            foreach (var option in options)
+            {
+                var selected = option;
+                var button = Button("", delegate
+                {
+                    draft.GpuId = selected.Id;
+                    foreach (var item in gpuButtons) item.SetResourceReference(Control.BorderBrushProperty,
+                        ((DeviceOption)item.Tag).Id == draft.GpuId ? "SettingsAccent" : "SettingsLine");
+                    PreviewDraft();
+                });
+                button.Tag = option; button.Content = Label(option.Name.Split(new[] { " · " }, StringSplitOptions.None)[0] +
+                    (option.Id == null ? "" : option.Id.StartsWith("nvidia:") ? "\nDriver sensors" : "\nHardware monitor sensors"), 12, "#E6F3EC");
+                button.HorizontalContentAlignment = HorizontalAlignment.Left;
+                button.Margin = new Thickness(0, 6, 0, 0); button.ToolTip = option.Name + "\n" + option.Id;
+                button.SetResourceReference(Control.BorderBrushProperty, option.Id == draft.GpuId ? "SettingsAccent" : "SettingsLine");
+                gpuButtons.Add(button); devices.Children.Add(button);
+            }
+            }
+            if (deviceTab == 1) DeviceChecks("Volumes to display", deviceCatalog.Volumes, draft.VolumeIds, true);
+            if (deviceTab == 2) DeviceChecks("Network interfaces", deviceCatalog.Networks, draft.NetworkIds, false);
+            if (!String.IsNullOrEmpty(deviceCatalog.Error)) devices.Children.Add(Label(deviceCatalog.Error, 10, "#9FBAAB"));
+        }
+        internal void PreviewDevices(DeviceCatalog catalog)
+        { deviceCatalog = catalog; RenderDevices(); }
+        internal void VerifyDeviceControls()
+        {
+            var catalog = new DeviceCatalog();
+            catalog.Gpus.Add(new DeviceOption { Id = "nvidia:second", Name = "Second GPU" });
+            catalog.Volumes.Add(new DeviceOption { Id = "volume-a", Name = "C: System" });
+            catalog.Volumes.Add(new DeviceOption { Id = "volume-b", Name = "D: Data" });
+            catalog.Networks.Add(new DeviceOption { Id = "ethernet", Name = "Ethernet" });
+            catalog.Networks.Add(new DeviceOption { Id = "vpn", Name = "VPN" });
+            PreviewDevices(catalog);
+            devices.Children.OfType<Button>().Single(b => b.Tag is DeviceOption && ((DeviceOption)b.Tag).Id == "nvidia:second")
+                .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            deviceTab = 1; RenderDevices();
+            var volume = devices.Children.OfType<CheckBox>().Single(c => (string)c.Tag == "volume-b");
+            volume.IsChecked = false; volume.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+            deviceTab = 2; RenderDevices();
+            var network = devices.Children.OfType<CheckBox>().Single(c => (string)c.Tag == "vpn");
+            network.IsChecked = false; network.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+            if (draft.GpuId != "nvidia:second" || !draft.VolumeIds.SequenceEqual(new[] { "volume-a" }) || !draft.NetworkIds.SequenceEqual(new[] { "ethernet" }))
+                throw new InvalidOperationException("Device controls did not apply their selected identities.");
+            ApplyDraft(false);
+        }
+        private void DeviceChecks(string title, List<DeviceOption> available, string[] selected, bool volumes)
+        {
+            devices.Children.Add(Label(title, 14, "#E6F3EC"));
+            devices.Children.Add(Label(volumes ? "Check the volumes shown in Monitor and Storage." : "Check one interface, or combine several. Leave VPN adapters unchecked to avoid counting traffic twice.", 11, "#9FBAAB"));
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 8) };
+            actions.Children.Add(Button(volumes ? "All volumes" : "All active", delegate
+            { if (volumes) draft.VolumeIds = null; else draft.NetworkIds = null; RenderDevices(); PreviewDraft(); }));
+            var none = Button("None", delegate
+            { if (volumes) draft.VolumeIds = new string[0]; else draft.NetworkIds = new string[0]; RenderDevices(); PreviewDraft(); });
+            none.Margin = new Thickness(6, 0, 0, 0); actions.Children.Add(none); devices.Children.Add(actions);
+            var selectionCount = Label(selected == null ? (volumes ? "All volumes · including newly connected" : "All active · including VPN and virtual adapters") : selected.Length + " selected", 10, "#70FFA7");
+            devices.Children.Add(selectionCount);
+            var options = new List<DeviceOption>(available);
+            if (!volumes) options = options.OrderByDescending(o => o.Name.EndsWith(" · Up")).ThenBy(o => o.Name).ToList();
+            if (selected != null)
+                foreach (string id in selected.Where(id => !options.Any(o => String.Equals(o.Id, id, StringComparison.OrdinalIgnoreCase))))
+                    options.Add(new DeviceOption { Id = id, Name = "Unavailable device" });
+            var checks = new List<CheckBox>();
+            foreach (var option in options)
+            {
+                string name = option.Name.Split(new[] { " · " }, StringSplitOptions.None)[0];
+                var check = new CheckBox { Content = Label(name + (!volumes && option.Name.EndsWith(" · Down") ? "\nDisconnected" : ""), 12, "#E6F3EC"),
+                    ToolTip = option.Name + "\n" + option.Id, Tag = option.Id, IsChecked = DeviceCatalog.Includes(selected, option.Id),
+                    Margin = new Thickness(2, 8, 0, 8), HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                check.SetResourceReference(Control.ForegroundProperty, "SettingsText");
+                checks.Add(check); devices.Children.Add(check);
+                check.Click += delegate
+                {
+                    string[] ids = checks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToArray();
+                    if (volumes) draft.VolumeIds = ids; else draft.NetworkIds = ids;
+                    selectionCount.Text = ids.Length + " selected";
+                    PreviewDraft();
+                };
+            }
+            if (options.Count == 0) devices.Children.Add(Label("No devices found. Try Refresh devices.", 11, "#9FBAAB"));
+        }        private void StartupSelectionChanged(object sender, RoutedEventArgs e)
         {
             if (startupLoading) return;
             startupDirty = startupState != null && (launchAtLogin.IsChecked == true) != startupState.Registered;
@@ -145,6 +277,10 @@ namespace Neon
             widgetSize.Value = value.WidgetScale * 100; fontSize.Value = value.FontScale * 100;
             opacity.Value = value.Background * 100; refresh.Value = value.RefreshSeconds;
             draft.Theme = value.Theme; draft.Background = value.Background;
+            draft.GpuId = value.GpuId;
+            draft.VolumeIds = value.VolumeIds == null ? null : (string[])value.VolumeIds.Clone();
+            draft.NetworkIds = value.NetworkIds == null ? null : (string[])value.NetworkIds.Clone();
+            RenderDevices();
             UpdateThemeButtons(); loading = false;
         }
         private void UpdateThemeButtons()
@@ -164,8 +300,11 @@ namespace Neon
             var previousStartup = startupState; bool changed = false, success = false;
             try
             {
-                if (previousStartup.Error != null) throw new InvalidOperationException(previousStartup.Error);
-                changed = startup.SetEnabled(launchAtLogin.IsChecked == true);
+                if (!IsDevicePanel)
+                {
+                    if (previousStartup.Error != null) throw new InvalidOperationException(previousStartup.Error);
+                    changed = startup.SetEnabled(launchAtLogin.IsChecked == true);
+                }
                 success = save(draft.Copy());
                 if (!success) throw new InvalidOperationException("Applied for this session. Check that the app folder is writable.");
                 startupDirty = false;

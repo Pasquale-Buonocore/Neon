@@ -4,7 +4,7 @@ NEON is a 64-bit Windows 10/11 desktop widget. Download or clone the repository 
 
 ## Monitor, Processes, and Storage
 
-NEON starts on **Monitor**. Choose another tab from the tab row or the **Tabs** menu. The selection lasts for the current session; restarting NEON returns to Monitor. Focused tab buttons support Left/Right, Home/End, and Enter/Space. Monitor keeps collecting its 60 in-memory chart samples while another tab is selected. No monitoring history is saved to disk.
+NEON starts on **Monitor**. Choose another tab from the tab row on the widget. The selection lasts for the current session; restarting NEON returns to Monitor. Focused tab buttons support Left/Right, Home/End, and Enter/Space. Monitor keeps collecting its 60 in-memory chart samples while another tab is selected. No monitoring history is saved to disk.
 
 | Area | Reading |
 | --- | --- |
@@ -27,9 +27,9 @@ Content sizes are approximate logical file sizes and need not match the volume's
 
 The shared header shows the system status in every tab. **SYSTEM RUNNING** means no monitored alert is active. It reports unavailable readings and fixed warning thresholds: CPU or RAM at 90%, CPU temperature at 90 °C, GPU temperature at 85 °C, and drive usage at 95%. The warning clears when the condition clears. These are general indicators, not hardware diagnostics.
 
-The drive list represents volumes with drive letters rather than physical devices. Multiple partitions on one device may appear separately. Inaccessible volumes remain listed as `N/A`; removed volumes disappear on the next refresh. The Monitor list uses the available height. Removable media and network drives are excluded.
+The Monitor drive list represents fixed local volumes rather than physical disks; partitions remain separate and mounted folders are supported. Inaccessible volumes remain listed as `N/A`. Explicitly selected volumes stay unavailable when removed, rather than being replaced by a drive reusing their letter. The Monitor list uses the available height. Removable media and network drives are excluded.
 
-Network rates sum active interfaces; VPNs and virtual adapters can cause traffic to be counted more than once. Uptime may include a previous session when Windows Fast Startup is enabled. NEON does not issue periodic sound or popup alerts.
+By default network rates sum active interfaces; VPNs and virtual adapters can cause traffic to be counted more than once. Choose interfaces in Personalize to avoid unwanted aggregation. Uptime may include a previous session when Windows Fast Startup is enabled. NEON does not issue periodic sound or popup alerts.
 
 ## Position and controls
 
@@ -53,6 +53,17 @@ Open **gear → Personalize…**. The settings window appears beside the widget 
 | Background opacity | 0–95%; default 60%; text and chart lines remain visible at 0% |
 | Refresh interval | 0.5–10 seconds; default one second |
 | Launch at Windows login | Off by default; applied only on Save |
+| Monitoring devices | Opens the dedicated Devices panel |
+
+Open **gear → Devices…** (or **Monitoring devices…** in Personalize). The dedicated panel stays to the left of the widget, with separate **GPU**, **Volumes** and **Network** tabs. It keeps a readable width and follows the widget's height and movement. If necessary, the widget temporarily shifts right to make room; closing Devices restores its saved position. The header, tabs and Save/Cancel controls remain visible while long lists scroll. **Refresh devices** updates the inventory without changing selections.
+
+In GPU, click a card to select it or choose **Automatic GPU**. In Volumes and Network, check or uncheck devices directly: no unlock step is needed. **All volumes** and **All active** enable automatic discovery; **None** clears the group. Network lists show active interfaces first, with disconnected entries labeled. Multiple checked interfaces are summed; leave VPN and virtual adapters unchecked to avoid duplicate traffic. Device identifiers and full descriptions are available in tooltips. Volume choices affect Monitor, drive warnings and the Storage picker; excluding the volume of an active scan cancels it. A disconnected selected volume remains unavailable instead of being replaced.
+
+GPU choices use NVIDIA UUIDs or Windows Plug and Play identities, volumes use Windows volume identities where available, and networks use interface IDs. NVIDIA cards with driver sensors use that entry in preference to a duplicate Windows entry. A previously saved Windows choice remains available. Hardware monitor entries use Libre/Open Hardware Monitor sensors only when the physical device and provider name match uniquely. Identical card names or missing providers can result in N/A instead of a guessed association.
+
+Save persists the selection; Cancel, × or Escape restores the saved choices. Reset in Devices resets only device choices; Reset in Personalize retains them. Disconnected selections remain listed as unavailable. An unavailable selected interface makes the aggregate N/A with chart gaps. Reconnection and counter resets establish a fresh baseline. Changing GPU or interfaces clears affected charts; in-flight readings for previous choices are discarded.
+
+The gear menu dismisses when clicking the desktop or another window, including when NEON does not have keyboard focus. Clicks inside menus and submenus remain usable; the outside click still reaches its destination.
 
 Custom size and text combinations may make the panel taller than half the desktop, but it stays within the available screen area. The settings window shares the widget's theme and background opacity. The gear menu also offers 0%, 35%, 60%, and 85% background presets. Themes change text, charts, borders, and backgrounds while preserving warning colors.
 
@@ -70,10 +81,10 @@ If preference saving fails, the preview stays visible and the settings window ex
 
 Windows does not provide a universal CPU temperature reading. NEON uses these providers when available:
 
-1. For the first NVIDIA GPU, NEON locates `nvidia-smi.exe` in the driver installation and reads usage, temperature, and VRAM when exposed.
+1. For NVIDIA GPUs, NEON locates `nvidia-smi.exe` in the driver installation and reads usage, temperature, and VRAM when exposed. Select a UUID entry in Personalize to choose a specific card.
 2. For CPU temperature and other GPUs, run [Libre Hardware Monitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) with its WMI provider available. Some sensors require Libre Hardware Monitor to run as administrator. NEON does not install or start it.
 3. The Open Hardware Monitor WMI provider is also supported.
 
-Open **Sensor information** for provider notes. WMI and NVIDIA queries run in the background. Temperature is the highest available reading for a device and may come from a core, package, or hotspot sensor, depending on the provider. GPU metrics come from the first GPU exposed by the provider. If a provider stops responding, unavailable readings return to `N/A`; temperature is never inferred from utilization.
+Open **Sensor information** for provider notes. WMI and NVIDIA queries run in the background. Temperature is the highest available reading for a device and may come from a core, package, or hotspot sensor, depending on the provider. Automatic GPU uses the first GPU exposed by a supported sensor provider; an explicit selection never falls back to another device. If a provider stops responding, unavailable readings return to `N/A`; temperature is never inferred from utilization.
 
 NEON requires no account or remote telemetry and does not change clocks, fans, or other hardware controls.

@@ -27,6 +27,7 @@ namespace Neon
         public Color GridColor = Color.FromArgb(30, 120, 220, 170);
         public double Scale = 100;
         public void Push(double? value) { values.Add(value); if (values.Count > 60) values.RemoveAt(0); InvalidateVisual(); }
+        public void Clear() { values.Clear(); InvalidateVisual(); }
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
@@ -91,6 +92,7 @@ namespace Neon
         private StorageDetailsWindow storageDetailsWindow;
         private readonly Dictionary<string, StorageScanResult> storageResults = new Dictionary<string, StorageScanResult>(StringComparer.OrdinalIgnoreCase);
         private List<StorageVolume> storageVolumes = new List<StorageVolume>();
+        private List<StorageVolume> storageKnownVolumes = new List<StorageVolume>();
         private StorageVolume selectedStorageVolume;
         private CancellationTokenSource storageCancel;
         private StorageProgress storageProgress;
@@ -341,14 +343,25 @@ namespace Neon
             {
                 var volumes = await Task.Run(() => StorageVolumeCatalog.Read());
                 if (shuttingDown) return;
-                string previous = selectedStorageVolume == null ? null : selectedStorageVolume.Id;
-                storageVolumes = volumes; storageCatalogError = null;
-                selectedStorageVolume = storageVolumes.FirstOrDefault(v => v.Id == previous) ??
-                    storageVolumes.FirstOrDefault(v => String.Equals(v.Root, Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase)) ??
-                    storageVolumes.FirstOrDefault();
+                storageKnownVolumes = volumes; storageCatalogError = null;
+                ApplyStorageSelection();
             }
             catch (Exception ex) { storageCatalogError = "Could not list volumes: " + ex.Message; }
             finally { storageLoading = false; if (!shuttingDown) RenderStorage(); }
+        }
+        private void ApplyStorageSelection()
+        {
+            var previous = selectedStorageVolume;
+            storageVolumes = DeviceCatalog.SelectVolumes(storageKnownVolumes, preferences.VolumeIds);
+            if (previous != null && DeviceCatalog.Includes(preferences.VolumeIds, previous.Id) &&
+                !storageVolumes.Any(v => String.Equals(v.Id, previous.Id, StringComparison.OrdinalIgnoreCase)))
+                storageVolumes.Add(new StorageVolume { Id = previous.Id, Root = previous.Root, Mounts = previous.Mounts,
+                    Label = previous.Label, MediaType = previous.MediaType, Error = "Selected volume unavailable" });
+            selectedStorageVolume = previous == null ? null : storageVolumes.FirstOrDefault(v => String.Equals(v.Id, previous.Id, StringComparison.OrdinalIgnoreCase));
+            if (selectedStorageVolume == null)
+                selectedStorageVolume = storageVolumes.FirstOrDefault(v => String.Equals(v.Root, Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase)) ?? storageVolumes.FirstOrDefault();
+            if (previous != null && !DeviceCatalog.Includes(preferences.VolumeIds, previous.Id) && storageCancel != null) storageCancel.Cancel();
+            storagePage = 0;
         }
         private void RenderStorage()
         {
@@ -382,7 +395,7 @@ namespace Neon
             StorageScanResult result = null;
             if (selectedStorageVolume != null)
             {
-                storageResults.TryGetValue(selectedStorageVolume.Id, out result);
+                if (selectedStorageVolume.Error == null) storageResults.TryGetValue(selectedStorageVolume.Id, out result);
                 storageSummary.Text = (selectedStorageVolume.Error == null ? StorageFormat.Size(selectedStorageVolume.UsedBytes) + " used · " +
                     StorageFormat.Size(selectedStorageVolume.FreeBytes) + " free / " +
                     StorageFormat.Size(selectedStorageVolume.TotalBytes) : "Capacity unavailable");
@@ -778,6 +791,7 @@ namespace Neon
             var menu = CreateMenuChrome();
             menu.Items.Add(new MenuItem { Header = "NEON / PERSONALIZE", IsEnabled = false, FontSize = 10, Padding = new Thickness(8, 4, 8, 5) });
             var settings = Menu("Personalize…", OpenSettings, false); settings.Tag = "settings"; settings.Icon = MenuGlyph("M2,3H14 M2,8H14 M2,13H14 M5,1V5 M11,6V10 M6,11V15"); menu.Items.Add(settings);
+            var devices = Menu("Devices…", OpenDevices, false); devices.Icon = MenuGlyph("M4,4H12V12H4Z M6,6H10V10H6Z M1,5H4 M1,8H4 M1,11H4 M12,5H15 M12,8H15 M12,11H15 M5,1V4 M8,1V4 M11,1V4 M5,12V15 M8,12V15 M11,12V15"); menu.Items.Add(devices);
             var templates = new MenuItem { Header = "Color themes", Tag = "themes", Icon = MenuGlyph("M1,1H6V6H1Z M10,1H15V6H10Z M1,10H6V15H1Z M10,10H15V15H10Z") };
             foreach (var palette in ThemePalette.All)
                 templates.Items.Add(ThemeMenuItem(palette));
@@ -794,15 +808,8 @@ namespace Neon
             menu.Items.Add(opacityMenu);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
             var desktopItem = Menu("Always on desktop", delegate { }, true); desktopItem.Tag = "desktop"; desktopItem.IsEnabled = false; desktopItem.Icon = MenuGlyph("M1,2H15V12H1Z M8,12V15 M4,15H12"); menu.Items.Add(desktopItem);
-            var views = new MenuItem { Header = "Tabs" };
-            for (int i = 0; i < 3; i++)
-            {
-                int index = i;
-                views.Items.Add(Menu(new[] { "Monitor", "Processes", "Storage" }[i], delegate { SelectTab(index); }, selectedTab == i, true));
-            }
-            menu.Items.Add(views);
             menu.Items.Add(new Separator { Style = (Style)menu.Resources[typeof(Separator)] });
-            menu.Items.Add(Menu("Internet speed test…", OpenSpeedTest, false));
+            var speedTest = Menu("Internet speed test…", OpenSpeedTest, false); speedTest.Icon = MenuGlyph("M2,13 A7,7 0 1 1 14,13 M8,10L12,5 M2,13H5 M11,13H14"); menu.Items.Add(speedTest);
             var info = Menu("Sensor information", ShowSensorInfo, false); info.Icon = MenuGlyph("M8,1 A7,7 0 1 0 8,15 A7,7 0 1 0 8,1 M8,7V12 M8,4V4.5"); menu.Items.Add(info);
             var visibility = Menu(IsVisible ? "Hide widget" : "Show widget", delegate { if (IsVisible) Hide(); else Reveal(); }, false); visibility.Icon = MenuGlyph("M1,8 Q8,-2 15,8 Q8,18 1,8 M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5"); menu.Items.Add(visibility);
             var exit = Menu("Quit NEON", delegate { Close(); }, false); exit.Icon = MenuGlyph("M8,1V8 M4,3 A6,6 0 1 0 12,3"); menu.Items.Add(exit);
@@ -817,6 +824,7 @@ namespace Neon
             menu.Resources["Accent"] = Green; menu.Resources["MutedColor"] = Muted;
             var hover = Green.Color; hover.A = 35; menu.Resources["MenuHoverColor"] = new SolidColorBrush(hover);
             menu.Style = (Style)menu.Resources[typeof(ContextMenu)];
+            new MenuDismissal(menu);
             return menu;
         }
         private MenuItem ThemeMenuItem(ThemePalette palette)
@@ -847,6 +855,7 @@ namespace Neon
         }
         private void OpenOptions()
         {
+            if (shell.ContextMenu != null && shell.ContextMenu.IsOpen) { CloseOptions(); return; }
             RefreshOptions();
             shell.ContextMenu.PlacementTarget = shell;
             shell.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
@@ -910,21 +919,26 @@ namespace Neon
         }
         public void SetTheme(string theme) { preferences.Theme = theme; ApplyPreferences(); SavePreferences(); if (settingsWindow != null) settingsWindow.SyncSavedPreferences(preferences); }
         private void OpenSettings()
+        { OpenSettingsPanel(false); }
+        private void OpenDevices()
+        { OpenSettingsPanel(true); }
+        private void OpenSettingsPanel(bool devicesOnly)
         {
             CloseOptions();
             if (!preview && !IsVisible) Reveal();
+            if (settingsWindow != null && settingsWindow.IsDevicePanel != devicesOnly) settingsWindow.Close();
             if (settingsWindow != null) { if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal; settingsWindow.RefreshStartupState(); settingsWindow.KeepOnDesktop(); return; }
             if (speedTestWindow != null) speedTestWindow.Close();
             if (storageDetailsWindow != null) storageDetailsWindow.Close();
             settingsWindow = new SettingsWindow(preferences, delegate(Preferences value) { return ApplyUserSettings(value, false); }, ApplyUserSettings,
-                preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration());
+                preview ? (IStartupRegistration)new PreviewStartupRegistration() : new WindowsStartupRegistration(), devicesOnly, OpenDevices);
             var area = CurrentWorkArea();
             settingsWindow.WindowStartupLocation = WindowStartupLocation.Manual;
             settingsWindow.MinWidth = 100; settingsWindow.MinHeight = 100;
             settingsWindow.MaxWidth = area.Width; settingsWindow.MaxHeight = area.Height;
             PositionCompanionWindows();
             if (preview) { settingsWindow.ShowActivated = false; settingsWindow.ShowInTaskbar = false; settingsWindow.Left = settingsWindow.Top = -32000; }
-            settingsWindow.Closed += delegate { settingsWindow = null; };
+            settingsWindow.Closed += delegate { settingsWindow = null; if (!preview && !shuttingDown) RestorePosition(); };
             settingsWindow.Show();
         }
         internal bool ApplyUserSettings(Preferences value)
@@ -934,11 +948,64 @@ namespace Neon
             var normalized = value.Copy(); normalized.Normalize();
             preferences.WidgetScale = normalized.WidgetScale; preferences.FontScale = normalized.FontScale;
             preferences.RefreshSeconds = normalized.RefreshSeconds; preferences.Background = normalized.Background; preferences.Theme = normalized.Theme;
+            bool gpuChanged = preferences.GpuId != normalized.GpuId;
+            bool networkChanged = !Enumerable.SequenceEqual(preferences.NetworkIds ?? new[] { "*" }, normalized.NetworkIds ?? new[] { "*" });
+            bool volumesChanged = !Enumerable.SequenceEqual(preferences.VolumeIds ?? new[] { "*" }, normalized.VolumeIds ?? new[] { "*" });
+            preferences.GpuId = normalized.GpuId; preferences.VolumeIds = normalized.VolumeIds; preferences.NetworkIds = normalized.NetworkIds;
+            if (volumesChanged) { ApplyStorageSelection(); RenderStorage(); }
+            if (gpuChanged)
+            {
+                gpu.Chart.Clear(); gpu.Value.Text = "N/A"; gpu.Detail.Text = "Refreshing selected GPU…";
+                gpuModel.Text = normalized.GpuId ?? "Automatic GPU"; temperature.Detail.Text = "GPU N/A";
+            }
+            if (networkChanged)
+            {
+                downloadChart.Clear(); uploadChart.Clear(); networkPeak = 1024;
+                download.Text = upload.Text = "N/A";
+            }
             ApplyPreferences();
             if (IsLoaded) { UpdateLayout(); RestorePosition(); }
             return !persist || SavePreferences();
         }
         internal Preferences CurrentPreferences { get { return preferences.Copy(); } }
+        internal void VerifyDevicesCompanion()
+        {
+            var before = preferences.Copy();
+            OpenDevices();
+            PositionCompanionWindows();
+            if (settingsWindow == null || !settingsWindow.IsDevicePanel || settingsWindow.Left + settingsWindow.Width > Left - 7 ||
+                settingsWindow.Width > 340 || settingsWindow.Width < 100 || settingsWindow.ShowInTaskbar)
+                throw new InvalidOperationException("Devices must open as a readable companion on the left.");
+            OpenDevices();
+            if (!settingsWindow.IsDevicePanel) throw new InvalidOperationException("Opening Devices twice replaced its panel.");
+            settingsWindow.Close();
+            if (preferences.Left != before.Left || preferences.Top != before.Top || preferences.DockToCorner != before.DockToCorner)
+                throw new InvalidOperationException("Making room for Devices changed the saved anchor.");
+        }
+        internal void VerifyStorageDeviceSelection()
+        {
+            storageKnownVolumes = new List<StorageVolume> {
+                new StorageVolume { Id = "volume-a", Root = @"C:\", TotalBytes = 100, FreeBytes = 2 },
+                new StorageVolume { Id = "volume-b", Root = @"D:\", TotalBytes = 200, FreeBytes = 100 } };
+            var selected = preferences.Copy(); selected.VolumeIds = new[] { "volume-b" };
+            ApplyUserSettings(selected, false);
+            if (storageVolumes.Count != 1 || selectedStorageVolume.Id != "volume-b")
+                throw new InvalidOperationException("Storage picker ignored the volume selection.");
+            storageKnownVolumes.RemoveAt(1); ApplyStorageSelection(); RenderStorage();
+            if (selectedStorageVolume.Id != "volume-b" || selectedStorageVolume.Error == null || storageStart.IsEnabled)
+                throw new InvalidOperationException("Removed selected volume was replaced by another volume.");
+            storageKnownVolumes.Add(new StorageVolume { Id = "volume-b", Root = @"E:\", TotalBytes = 200, FreeBytes = 100 });
+            ApplyStorageSelection(); RenderStorage();
+            if (selectedStorageVolume.Root != @"E:\" || selectedStorageVolume.Error != null)
+                throw new InvalidOperationException("Reconnected volume did not retain its identity after changing drive letter.");
+            storageCancel = new CancellationTokenSource();
+            selected.VolumeIds = new string[0]; ApplyUserSettings(selected, false);
+            if (!storageCancel.IsCancellationRequested || selectedStorageVolume != null || storageVolumes.Count != 0)
+                throw new InvalidOperationException("Excluding a scanning volume did not cancel and hide it.");
+            storageCancel.Dispose(); storageCancel = null;
+            selected.VolumeIds = null; ApplyUserSettings(selected, false);
+            if (storageVolumes.Count != 2) throw new InvalidOperationException("Restoring all volumes lost excluded devices.");
+        }
         internal double RefreshInterval { get { return timer.Interval.TotalSeconds; } }
         public void VerifyInterface()
         {
@@ -979,8 +1046,7 @@ namespace Neon
             SelectTab(2);
             if (selectedTab != 2 || storageContent.Visibility != Visibility.Visible)
                 throw new InvalidOperationException("Storage tab is unavailable.");
-            var tabMenu = shell.ContextMenu.Items.OfType<MenuItem>().First(item => Convert.ToString(item.Header) == "Tabs");
-            if (!((MenuItem)tabMenu.Items[2]).IsChecked || ((MenuItem)tabMenu.Items[0]).IsChecked ||
+            if (shell.ContextMenu.Items.OfType<MenuItem>().Any(item => Convert.ToString(item.Header) == "Tabs") ||
                 System.Windows.Automation.AutomationProperties.GetItemStatus(tabButtons[2]) != "Selected")
                 throw new InvalidOperationException("The selected tab is not reflected in navigation state.");
             Update(new Snapshot { CoreAvailable = true, CpuTemperature = 95, RamTotal = 100, RamUsed = 30, RamPercent = 30 });
@@ -1102,7 +1168,14 @@ namespace Neon
             if (reading || shuttingDown) return;
             if (desktopLayer != null) desktopLayer.KeepBehind();
             reading = true;
-            try { var sample = await Task.Run(() => telemetry.Read()); if (!shuttingDown) Update(sample); }
+            var selected = preferences.Copy();
+            try
+            {
+                var sample = await Task.Run(() => telemetry.Read(selected));
+                if (!shuttingDown && selected.GpuId == preferences.GpuId &&
+                    Enumerable.SequenceEqual(selected.VolumeIds ?? new[] { "*" }, preferences.VolumeIds ?? new[] { "*" }) &&
+                    Enumerable.SequenceEqual(selected.NetworkIds ?? new[] { "*" }, preferences.NetworkIds ?? new[] { "*" })) Update(sample);
+            }
             catch (Exception ex) {
                 status.Text = "●  SYSTEM READING UNAVAILABLE"; status.Foreground = Amber;
                 status.ToolTip = ex.Message;
@@ -1124,9 +1197,10 @@ namespace Neon
             gpu.Value.Text = Percent(s.Gpu); gpu.Detail.Text = s.GpuMemoryUsed.HasValue && s.GpuMemoryTotal.HasValue ? "VRAM " + GiB(s.GpuMemoryUsed.Value) + "/" + GiB(s.GpuMemoryTotal.Value) + " GiB" : s.Gpu.HasValue ? "CORE USAGE" : "Sensor unavailable"; gpu.Chart.Push(s.Gpu);
             temperature.Value.Text = Temperature(s.CpuTemperature); temperature.Detail.Text = "GPU " + Temperature(s.GpuTemperature); temperature.Chart.Scale = 110; temperature.Chart.Push(s.CpuTemperature);
             temperature.Container.ToolTip = "CPU: highest CPU sensor reading. GPU: highest GPU sensor reading. Temperature providers are polled no more than once every 5 seconds.\n" + s.SensorSource + "\n" + s.SensorNote + (s.FanRpm.HasValue ? "\nFastest fan: " + s.FanRpm.Value.ToString("0") + " RPM" : "");
-            download.Text = Speed(s.Download); upload.Text = Speed(s.Upload);
+            download.Text = s.NetworkAvailable ? Speed(s.Download) : "N/A"; upload.Text = s.NetworkAvailable ? Speed(s.Upload) : "N/A";
+            download.ToolTip = upload.ToolTip = s.NetworkNote;
             networkPeak = Math.Max(1024, Math.Max(Math.Max(s.Download, s.Upload), networkPeak * 0.98));
-            downloadChart.Scale = uploadChart.Scale = networkPeak; downloadChart.Push(s.Download); uploadChart.Push(s.Upload);
+            downloadChart.Scale = uploadChart.Scale = networkPeak; downloadChart.Push(s.NetworkAvailable ? (double?)s.Download : null); uploadChart.Push(s.NetworkAvailable ? (double?)s.Upload : null);
             string previousDiskLayout = diskLayout;
             UpdateDisks(s.Disks);
             if (previousDiskLayout != diskLayout) UpdateViewportWidth();
@@ -1250,9 +1324,15 @@ namespace Neon
             {
                 if (companion == null) continue;
                 companion.MaxWidth = area.Width; companion.MaxHeight = area.Height;
-                companion.Width = Math.Min(widgetWidth, area.Width);
+                bool devices = companion == settingsWindow && settingsWindow.IsDevicePanel;
+                companion.Width = devices ? Math.Min(340, Math.Max(100, area.Width - widgetWidth - 8)) : Math.Min(widgetWidth, area.Width);
                 companion.Height = Math.Min(widgetHeight, area.Height);
-                var point = SettingsPosition(area, new Rect(Left, Top, widgetWidth, widgetHeight),
+                if (devices && Left < area.Left + companion.Width + 8 && area.Width >= widgetWidth + companion.Width + 8)
+                {
+                    bool wasPositioning = positioning; positioning = true;
+                    try { Left = area.Left + companion.Width + 8; } finally { positioning = wasPositioning; }
+                }
+                var point = devices ? new Point(Math.Max(area.Left, Left - companion.Width - 8), Math.Max(area.Top, Math.Min(Top, area.Bottom - companion.Height))) : SettingsPosition(area, new Rect(Left, Top, widgetWidth, widgetHeight),
                     new Size(companion.ActualWidth > 0 ? companion.ActualWidth : companion.Width, companion.ActualHeight > 0 ? companion.ActualHeight : companion.Height));
                 companion.Left = point.X; companion.Top = point.Y;
             }
